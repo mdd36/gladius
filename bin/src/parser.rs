@@ -1,14 +1,57 @@
-use std::str::SplitAsciiWhitespace;
-
+use std::{rc::Rc, str::SplitAsciiWhitespace};
 use itertools::Itertools;
+
+use gladius_core::position::{Move, Position};
 
 // For the official spec, see
 // https://gist.github.com/DOBRO/2592c6dad754ba67e6dcaec8c90165bf#file-uci-protocol-specification-txt-L41
-use crate::position::{Move, Position};
+pub enum UciCommand {
+  UCI,
+  Debug(bool),
+  IsReady,
+  SetOption {
+      name: String,
+      value: Option<String>,
+  },
+  Register,
+  NewGame,
+  Position {
+      start_position: Position,
+      moves: Option<Rc<[Move]>>,
+  },
+  Go {
+      search_moves: Option<Rc<[Move]>>,
+      wtime: Option<u32>,
+      btime: Option<u32>,
+      winc: Option<u32>,
+      binc: Option<u32>,
+      depth: Option<u8>,
+      nodes: Option<u32>,
+      move_time: Option<u32>,
+      infinite: Option<bool>,
+  },
+  Stop,
+  Quit,
+  Help,
+}
 
-use self::model::UciCommand;
-
-pub mod model;
+impl std::fmt::Debug for UciCommand {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+      match self {
+          Self::UCI => write!(f, "UCI"),
+          Self::Debug(_) => write!(f, "Debug"),
+          Self::IsReady => write!(f, "IsReady"),
+          Self::SetOption { .. } => write!(f, "SetOption"),
+          Self::Register => write!(f, "Register"),
+          Self::NewGame => write!(f, "NewGame"),
+          Self::Position { .. } => write!(f, "Position"),
+          Self::Go { .. } => write!(f, "Go"),
+          Self::Stop => write!(f, "Stop"),
+          Self::Quit => write!(f, "Quit"),
+          Self::Help => write!(f, "Help"),
+      }
+  }
+}
 
 pub fn parse_input(input: String) -> Result<UciCommand, &'static str> {
     let mut split = input.split_ascii_whitespace();

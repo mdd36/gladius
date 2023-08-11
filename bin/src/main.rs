@@ -1,5 +1,7 @@
-use gladius_core::uci::{model::UciCommand, parse_input};
+mod parser;
+
 use rustyline::error::ReadlineError;
+use parser::{UciCommand, parse_input};
 
 const CLI_BANNER: &str = r#"
  _____ _           _ _           

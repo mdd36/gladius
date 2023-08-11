@@ -6,4 +6,5 @@ authors = [ "Matthew Dickson hi@mattdickson.io" ]
 
 [dependencies]
 gladius_core = { path = "../core" }
+itertools = "0.11"
 rustyline = "12.0"

@@ -5,4 +5,3 @@ edition = "2021"
 authors = [ "Matthew Dickson hi@mattdickson.io"]
 
 [dependencies]
-itertools = "0.11"
