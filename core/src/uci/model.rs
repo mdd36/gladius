@@ -30,7 +30,7 @@ impl std::fmt::Debug for UciCommand {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       Self::UCI => write!(f, "UCI"),
-      Self::Debug(arg0) => write!(f, "Debug"),
+      Self::Debug(_) => write!(f, "Debug"),
       Self::IsReady => write!(f, "IsReady"),
       Self::SetOption { .. } => write!(f, "SetOption"),
       Self::Register => write!(f, "Register"),
