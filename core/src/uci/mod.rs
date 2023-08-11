@@ -1,5 +1,7 @@
 use std::str::SplitAsciiWhitespace;
 
+use itertools::Itertools;
+
 // For the official spec, see
 // https://gist.github.com/DOBRO/2592c6dad754ba67e6dcaec8c90165bf#file-uci-protocol-specification-txt-L41
 use crate::position::{Move, Position};
@@ -49,8 +51,7 @@ fn parse_position(input: &str, mut cmd: SplitAsciiWhitespace<'_>) -> Result<UciC
           .as_ptr() as usize;
 
         let end_word = cmd 
-          .by_ref()
-          .take_while(|w| *w != "startpos" && *w != "moves")
+          .take_while_ref(|&w| w != "startpos" && w != "moves")
           .last()
           .ok_or("Invalid fen string")?;
         let end_address = end_word.as_ptr() as usize + end_word.len();
@@ -65,8 +66,7 @@ fn parse_position(input: &str, mut cmd: SplitAsciiWhitespace<'_>) -> Result<UciC
       "startpos" => position = Some(Position::default()),
       "moves" => {
         let parsed_moves = cmd 
-          .by_ref()
-          .take_while(|w| *w != "fen" && *w != "startpos")
+          .take_while_ref(|&w| w != "fen" && w != "startpos")
           .map(Move::from)
           .collect();
         moves = Some(parsed_moves)

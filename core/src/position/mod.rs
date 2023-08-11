@@ -288,7 +288,6 @@ impl std::fmt::Debug for PositionMetadata {
         let castling = (self.0 & CASTLING_MASK) >> 6;
         let to_move = if self.0 & TO_MOVE_MASK == 0 { "white" } else { "black" };
         let en_passant_bits = (self.0 & EN_PASSANT_MASK) >> 11;
-        println!("{en_passant_bits:b}");
         let en_passant_possible = en_passant_bits & 0x0008 != 0;
         let en_passant_file = (en_passant_bits & 0x0007) as u8 + ('a' as u8);
         let en_passant_rank = if self.0 & TO_MOVE_MASK == 0 { "6" } else { "3" };
@@ -512,6 +511,7 @@ impl Position {
 
 }
 
+#[derive(Debug)]
 pub struct Move {
   pub start: Square,
   pub target: Square,
