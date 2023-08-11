@@ -1,8 +1,15 @@
 [package]
-name = "sparrow"
+name = "gladius"
 version = "0.1.0"
 edition = "2021"
+authors = [ "Matthew Dickson hi@mattdickson.io"]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "gladius_core"
+path = "src/lib.rs"
+
+[[bin]]
+name = "gladius"
+path = "src/bin.rs"
 
 [dependencies]

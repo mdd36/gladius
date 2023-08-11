@@ -1,3 +1,6 @@
+pub mod uci;
+pub mod position;
+
 pub fn add(left: usize, right: usize) -> usize {
     left + right
 }
