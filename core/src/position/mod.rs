@@ -544,7 +544,7 @@ impl From<&str> for Move {
     ///   Square::from_algebraic_notion("e7")
     /// );
     /// assert_eq!(
-    ///   second_move.start,
+    ///   second_move.target,
     ///   Square::from_algebraic_notion("e5")
     /// );
     /// ```
