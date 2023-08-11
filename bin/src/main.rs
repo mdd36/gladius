@@ -1,9 +1,7 @@
-use gladius_core::uci::{parse_input, model::UciCommand};
+use gladius_core::uci::{model::UciCommand, parse_input};
 use rustyline::error::ReadlineError;
 
-
-const CLI_BANNER: &str = 
-r#"
+const CLI_BANNER: &str = r#"
  _____ _           _ _           
 |  __ \ |         | (_)          
 | |  \/ | __ _  __| |_ _   _ ___ 
@@ -18,8 +16,7 @@ O|===|* >________________>
 © 2023 Matthew Dickson
 "#;
 
-const HELP_DIALOG: &str = 
-r#"
+const HELP_DIALOG: &str = r#"
 Supported Universal Chess Interface (UCI) Commands
 
 uci
@@ -65,45 +62,48 @@ quit
 "#;
 
 fn main() {
-  println!("{CLI_BANNER}");
-  uci_loop()
+    println!("{CLI_BANNER}");
+    uci_loop()
 }
 
 pub fn uci_loop() {
-  let mut line_reader = rustyline::DefaultEditor::new()
-    .expect("Failed to initialize command interface.");
-  loop {
-    let line = match line_reader.readline("> ") {
-      Ok(line) => {
-        line_reader.add_history_entry(&line).unwrap();
-        line
-      },
-      Err(ReadlineError::Interrupted | ReadlineError::Eof) => return,
-      Err(_) => continue,
-    };
-    let result = match parse_input(line) {
-      Ok(cmd) => cmd,
-      Err(str) =>  {
-        println!("{str}");
-        continue;
-      }
-    };
+    let mut line_reader =
+        rustyline::DefaultEditor::new().expect("Failed to initialize command interface.");
+    loop {
+        let line = match line_reader.readline("> ") {
+            Ok(line) => {
+                line_reader.add_history_entry(&line).unwrap();
+                line
+            }
+            Err(ReadlineError::Interrupted | ReadlineError::Eof) => return,
+            Err(_) => continue,
+        };
+        let result = match parse_input(line) {
+            Ok(cmd) => cmd,
+            Err(str) => {
+                println!("{str}");
+                continue;
+            }
+        };
 
-    match result {
-      UciCommand::UCI => {
-        println!("id name Gladius");
-        println!("id author Matthew Dickson");
-        println!("uciok");
-      }
-      UciCommand::Position { start_position, moves } => {
-        start_position.print_board();
-        println!("{:?}", &start_position.metadata);
-        println!("{moves:?}");
-      }
-      UciCommand::Register => println!("registration ok"),
-      UciCommand::Help => println!("{HELP_DIALOG}"),
-      UciCommand::Quit => return,
-      cmd => println!("{cmd:?}")
+        match result {
+            UciCommand::UCI => {
+                println!("id name Gladius");
+                println!("id author Matthew Dickson");
+                println!("uciok");
+            }
+            UciCommand::Position {
+                start_position,
+                moves,
+            } => {
+                start_position.print_board();
+                println!("{:?}", &start_position.metadata);
+                println!("{moves:?}");
+            }
+            UciCommand::Register => println!("registration ok"),
+            UciCommand::Help => println!("{HELP_DIALOG}"),
+            UciCommand::Quit => return,
+            cmd => println!("{cmd:?}"),
+        }
     }
-  }
 }
