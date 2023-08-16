@@ -1,3 +1,5 @@
+mod move_boards;
+
 use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, ShlAssign};
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -68,20 +70,10 @@ impl Square {
     /// assert_eq!("e4", Square::from_algebraic_notion("e4").as_algebraic_notation());
     /// ```
     pub fn as_algebraic_notation(&self) -> String {
-        let mut pos = self.0;
-        let mut rank = 1;
-        while pos >= 256 {
-            pos = pos >> 8;
-            rank += 1;
-        }
+        let rank = self.0.trailing_zeros() / 8 + 1;
+        let file = self.0.trailing_zeros() % 8;
 
-        let mut file: u8 = 0;
-        while pos > 1 {
-            pos = pos >> 1;
-            file += 1;
-        }
-
-        let file_char = (file + ('a' as u8)) as char;
+        let file_char = ((file as u8) + ('a' as u8)) as char;
         format!("{file_char}{rank}")
     }
 
@@ -435,7 +427,6 @@ impl Position {
     /// Position::default().print_board();
     /// ```
     pub fn print_board(&self) {
-        #[allow(unused_results)]
         // Assuming worst case of 4 bytes per unicode char for the chess
         // pieces, plus a space between each. Letting the overestimation
         // of the required UTF-8 bytes buffer things like linebreaks
