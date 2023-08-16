@@ -1,6 +1,11 @@
-mod move_boards;
+mod move_generator;
 
-use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, ShlAssign};
+use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, ShlAssign, BitXorAssign};
+
+const WHITE_QUEEN_ROOK: Square = Square(0x8000000000000000);
+const WHITE_KING_ROOK:  Square = Square(0x0100000000000000);
+const BLACK_QUEEN_ROOK: Square = Square(0x0000000000000080);
+const BLACK_KING_ROOK:  Square = Square(0x0000000000000001);
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct Square(u64);
@@ -25,6 +30,22 @@ impl BitAndAssign for Square {
     }
 }
 
+impl BitAnd<u64> for Square {
+    type Output = u64;
+
+    fn bitand(self, rhs: u64) -> Self::Output {
+        self.0 & rhs
+    }
+}
+
+impl BitOr for Square {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self(self.0 | rhs.0)
+    }
+}
+
 impl std::fmt::Debug for Square {
     /// Prints the position in algebraic notation for simplicity.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -33,7 +54,7 @@ impl std::fmt::Debug for Square {
 }
 
 impl Square {
-    /// Convert the algebraic notation for a single square into a [`Position`].
+    /// Convert the algebraic notation for a single square into a [`Square`].
     /// ### Examples:
     ///
     /// ```
@@ -44,17 +65,29 @@ impl Square {
     /// assert_eq!(0x8000000000000000, Square::from_algebraic_notion("h8").as_u64());
     /// ```
     pub fn from_algebraic_notion(position: &str) -> Self {
-        let mut bit_position: u64 = 1;
         // Will be ASCII so we can just read them as bytes
         let file = position.as_bytes()[0] - ('a' as u8);
         let rank = position.as_bytes()[1] - ('1' as u8);
 
-        bit_position = bit_position << file;
-        bit_position = bit_position << (8 * rank);
-
-        Self(bit_position)
+        Self::from_rank_and_file(rank, file)
     }
 
+    /// Convert a 0-indexed rank and file into a [`Square`]
+    /// 
+    /// ### Examples:
+    /// 
+    /// ```
+    /// use gladius_core::position::Square;
+    /// 
+    /// assert_eq!("a1", Square::from_rank_and_file(0, 0).as_algebraic_notation());
+    /// assert_eq!("h8", Square::from_rank_and_file(7, 7).as_algebraic_notation());
+    /// ```
+    pub fn from_rank_and_file(rank: u8, file: u8) -> Self {
+        let board = 1u64 << file << (8 * rank);
+        Self(board)
+    }
+
+    /// See the square as a raw u64.
     pub fn as_u64(&self) -> u64 {
         self.0
     }
@@ -70,11 +103,19 @@ impl Square {
     /// assert_eq!("e4", Square::from_algebraic_notion("e4").as_algebraic_notation());
     /// ```
     pub fn as_algebraic_notation(&self) -> String {
-        let rank = self.0.trailing_zeros() / 8 + 1;
-        let file = self.0.trailing_zeros() % 8;
+        let file = self.file();
+        let rank = self.rank();
 
-        let file_char = ((file as u8) + ('a' as u8)) as char;
+        let file_char = (file + ('a' as u8)) as char;
         format!("{file_char}{rank}")
+    }
+
+    pub fn file(&self) -> u8 {
+        (self.0.trailing_zeros() % 8) as u8
+    }
+
+    pub fn rank(&self) -> u8 {
+        (self.0.trailing_zeros() / 8 + 1) as u8
     }
 
     /// To make it easier to grok the position, Debug is implemented to
@@ -158,11 +199,33 @@ impl BitAnd<u64> for Board {
     }
 }
 
+impl BitAnd<Square> for Board {
+    type Output = Board;
+
+    fn bitand(self, rhs: Square) -> Self::Output {
+        Self(self.0 & rhs.0)
+    }
+}
+
 impl BitOr for Board {
     type Output = Self;
 
     fn bitor(self, rhs: Self) -> Self::Output {
         Self(self.0 | rhs.0)
+    }
+}
+
+impl BitOr<Square> for Board {
+    type Output = Self;
+
+    fn bitor(self, rhs: Square) -> Self::Output {
+        Self(self.0 | rhs.0)
+    }
+}
+
+impl BitXorAssign<Square> for Board {
+    fn bitxor_assign(&mut self, rhs: Square) {
+       *self = Self(self.0 ^ rhs.0); 
     }
 }
 
@@ -184,17 +247,30 @@ impl BitAndAssign<Square> for Board {
     }
 }
 
+impl BitXorAssign<u64> for Board {
+    fn bitxor_assign(&mut self, rhs: u64) {
+        *self = Self(self.0 ^ rhs);
+    }
+}
+
 impl Board {
     pub fn as_u64(&self) -> u64 {
         self.0
     }
 }
 
+pub enum CastleSide {
+    Queen,
+    King,
+}
+
+#[derive(Copy, Clone)]
 pub enum Color {
     White,
     Black,
 }
 
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Piece {
     Pawn = 2,
     Rook,
@@ -219,8 +295,8 @@ pub enum Piece {
 ///   Will be 0 for white's move, 1 for black's
 /// Castling rights (4 bits)
 ///   Tracks the castling rights for each side. Each bit represents
-///   one possible castle move, in order: white's king side, white's
-///   queen side, black's king side, black's queen side.
+///   one possible castle move, in order: blacks's king side, blacks's
+///   queen side, whites's king side, whites's queen side.
 /// Half move clock (6 bits)
 ///   The number of moves since the last pawn move or capture. Used to
 ///   enforce a stalemate once it reaches 50.
@@ -232,9 +308,11 @@ pub enum Piece {
 ///
 /// 0 1010 1 1011 000101
 ///
+#[derive(Copy, Clone)]
 pub struct PositionMetadata(u16);
 
 const EN_PASSANT_MASK: u16 = 0b0111100000000000;
+const EN_PASSANT_SET_MASK: u16 = 0b0100000000000000;
 const TO_MOVE_MASK: u16 = 0b0000010000000000;
 const CASTLING_MASK: u16 = 0b0000001111000000;
 const HALF_CLOCK_MASK: u16 = 0b0000000000111111;
@@ -288,9 +366,67 @@ impl PositionMetadata {
         Self(0)
     }
 
+    pub fn can_castle(&self, color: Color, side: CastleSide) -> bool {
+        let castle_mask = 0b01 << (side as u16) << (2 * color as u16) << 6;
+        self.0 & castle_mask != 0
+    }
+
+    pub fn to_move(&self) -> Color {
+        if self.0 & TO_MOVE_MASK != 0 {
+            Color::Black
+        } else {
+            Color::White
+        }
+    }
+
     /// Raises the half move counter by 1
     pub fn increment_half_move(&mut self) {
         *self = Self(self.0 + 1)
+    }
+
+    pub fn reset_move_clock(&mut self) {
+        *self = Self(self.0 & !HALF_CLOCK_MASK);
+    }
+
+    pub fn toggle_to_move(&mut self) {
+        *self = Self(self.0 ^ TO_MOVE_MASK);
+    }
+
+    pub fn revoke_castling_rights(&mut self, color: Color, side: CastleSide) {
+        let castle_mask = 0b01 << (side as u16) << (2 * color as u16) << 6;
+        *self = Self(self.0 & !castle_mask);
+    }
+
+    pub fn revoke_castling_rights_for_color(&mut self, color: Color) {
+        let castle_mask = 0b11 << (2 * color as u16) << 6;
+        *self = Self(self.0 & !castle_mask);
+    }
+
+    pub fn en_passant_square(&self) -> Option<Square> {
+        let en_passant_bits = self.0 >> 11;
+
+        if en_passant_bits & 0x8 == 0 {
+            return None;
+        }
+
+        let file = ((en_passant_bits & 0x7) + 1) as u64;
+        let rank_index = match self.to_move() {
+            Color::Black => 5,
+            Color::White => 2,
+        };
+
+        Some(Square(file << (8 * rank_index)))
+    }
+
+    pub fn clear_en_passant(&mut self) {
+        *self = Self(self.0 & !EN_PASSANT_MASK);
+    }
+
+    pub fn set_en_passant_square(&mut self, square: Square) {
+        let file = square.file() as u16 - 1 | 0b01;
+        let shifted_file = file << 11;
+
+        *self = Self(self.0 & !EN_PASSANT_MASK | EN_PASSANT_SET_MASK | shifted_file)
     }
 }
 
@@ -419,6 +555,80 @@ impl Position {
         self.boards[piece as usize]
     }
 
+    pub fn apply_move(&self, next_move: Move) -> Position {
+        let color_to_move = self.metadata.to_move() as usize;
+        let moved_piece = next_move.piece as usize;
+        let flags = next_move.flags;
+
+        let mut boards = self.boards.clone();
+
+        // TODO profile if this branching is a big penalty
+        if let Some(captured_piece) = next_move.captured_piece {
+            boards[1 - color_to_move] ^= next_move.target;
+            boards[captured_piece as usize] ^= next_move.target;
+        } else if flags.is_king_castle() {
+            // Move the Rook also
+            boards[Piece::Rook as usize] ^= 0x09 << (color_to_move * 56);
+        } else if flags.is_queen_castle() {
+            boards[Piece::Rook as usize] ^= 0x90 << (color_to_move * 56);
+        } else if flags.is_en_passant() {
+            // TODO profile this vs a branch
+            let captured_piece_square = next_move.target.as_u64()
+                << 8 * color_to_move as u64 // Shift target up a rank if black
+                >> 8 * (1 - color_to_move as u64); // Shift target down a rank if white
+            boards[Piece::Pawn as usize] ^= captured_piece_square;
+            boards[1 - color_to_move] ^= captured_piece_square;
+        }
+
+        boards[color_to_move] ^= next_move.start | next_move.target;
+        boards[moved_piece]   ^= next_move.start | next_move.target;
+
+        if let Some(piece) = next_move.promotion_piece {
+            boards[Piece::Pawn as usize] ^= next_move.target; 
+            boards[piece as usize] ^= next_move.target;
+        }
+
+        // This will copy by value since PositionMetadata implements Copy
+        let mut metadata = self.metadata;
+
+        // Set en passant square
+       if let Some(en_passant_square) = next_move.en_passant_square() {
+            metadata.set_en_passant_square(en_passant_square);
+       }
+
+        // Flip to move
+        metadata.toggle_to_move();
+
+        // Adjust castling rights
+        if next_move.start == WHITE_KING_ROOK || next_move.target == WHITE_KING_ROOK {
+            metadata.revoke_castling_rights(Color::White, CastleSide::King);
+        } else if next_move.start == WHITE_QUEEN_ROOK || next_move.target == WHITE_QUEEN_ROOK {
+            metadata.revoke_castling_rights(Color::White, CastleSide::Queen);
+        } else if next_move.start == BLACK_KING_ROOK || next_move.target == BLACK_KING_ROOK {
+            metadata.revoke_castling_rights(Color::Black, CastleSide::King);
+        } else if next_move.start == BLACK_QUEEN_ROOK || next_move.target == BLACK_QUEEN_ROOK {
+            metadata.revoke_castling_rights(Color::Black, CastleSide::Queen);
+        } else if next_move.piece == Piece::King {
+            metadata.revoke_castling_rights_for_color(self.metadata.to_move());
+        }
+
+        // Increment half move clock, if needed
+        if next_move.captured_piece.is_some() || next_move.piece == Piece::Pawn {
+            metadata.reset_move_clock();
+        } else {
+            metadata.increment_half_move();
+        }
+
+        Self {
+            boards,
+            metadata,
+        }
+    }
+
+    pub fn determine_move(&self, start: Square, target: Square) -> Move {
+        todo!()
+    }
+
     /// Print the board to the console.
     ///
     /// ```
@@ -486,10 +696,75 @@ impl Position {
     }
 }
 
+/// Various settings that could be true for a move. For example, if a capture
+/// occurred, if there's an en passant square after the move, or if a promotion
+/// occurred during the move. Structured like this, from most to least
+/// significant bit:
+/// 
+/// - Null Move (1 bit)
+/// - Capture (1 bit)
+/// - En Passant (1 bits)
+/// - Queen's Side Castle (1 bit)
+/// - King's Side Castle (1 bit)
+/// - Promotion (1 bit)
+#[derive(Copy, Clone, Default)]
+pub struct MoveFlags(u8);
+
+impl std::fmt::Debug for MoveFlags {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let is_null = self.0 & 0b00100000 != 0;
+        let capture = self.0 & 0b00010000 != 0;
+        let en_passant = self.0 & 0b00001000 != 0;
+        let queen_castle = self.0 & 0b00000100 != 0;
+        let king_castle = self.0 & 0b00000010 != 0;
+        let promotion = self.0 & 0b00000001 != 0;
+        f.debug_struct("MoveFlags")
+            .field("Null Move", &is_null)
+            .field("Capture", &capture)
+            .field("En Passant", &en_passant)
+            .field("Queen Castle", &queen_castle)
+            .field("King Castle", &king_castle)
+            .field("Promotions", &promotion)
+            .finish()
+    }
+}
+
+impl MoveFlags {
+
+    pub fn is_null_move(&self) -> bool {
+        self.0 & 0x80 != 0
+    }
+
+    pub fn is_capture(&self) -> bool {
+        self.0 & 0x40 != 0
+    }
+
+    pub fn is_en_passant(&self) -> bool {
+        self.0 & 0x20 != 0
+    }
+
+    pub fn is_queen_castle(&self) -> bool {
+        self.0 & 0x10 != 0
+    }
+
+    pub fn is_king_castle(&self) -> bool {
+        self.0 & 0x08 != 0
+    }
+
+    pub fn is_promotion(&self) -> bool {
+        self.0 & 0x04 != 0
+    }
+
+}
+
 #[derive(Debug)]
 pub struct Move {
+    pub flags: MoveFlags,
     pub start: Square,
     pub target: Square,
+    pub piece: Piece,
+    pub promotion_piece: Option<Piece>,
+    pub captured_piece: Option<Piece>,
 }
 
 impl From<&str> for Move {
@@ -523,9 +798,48 @@ impl From<&str> for Move {
     /// );
     /// ```
     fn from(value: &str) -> Self {
+        let promotion_piece = if value.len() == 5 {
+            match &value[5..5] {
+                "q" | "Q" => Some(Piece::Queen),
+                "r" | "R" => Some(Piece::Rook),
+                "b" | "B" => Some(Piece::Bishop),
+                "n" | "N" => Some(Piece::Knight),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        
         Self {
+            flags: MoveFlags(0),
             start: Square::from_algebraic_notion(&value[..2]),
-            target: Square::from_algebraic_notion(&value[2..]),
+            target: Square::from_algebraic_notion(&value[2..4]),
+            promotion_piece,
+            piece: Piece::Bishop,
+            captured_piece: None,
         }
     }
+}
+
+impl Move {
+
+    /// If an en passant square is created from this move, find the square
+    /// and return it. If no en passant square was created, returns None.
+    pub fn en_passant_square(&self) -> Option<Square> {
+        if self.piece != Piece::Pawn {
+            return None;
+        }
+
+        let start_rank = self.start.rank();
+        let end_rank = self.target.rank();
+
+        if start_rank == 1 && end_rank == 3 {
+            Some(Square::from_rank_and_file(2, self.start.file()))
+        } else if start_rank == 6 && end_rank == 4 {
+            Some(Square::from_rank_and_file(5, self.start.file()))
+        } else {
+            None
+        }
+    }
+
 }
