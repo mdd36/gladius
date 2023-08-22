@@ -3,6 +3,7 @@ Cargo.lock
 
 # Build artifacts
 target
+magic_finder
 
 # Editor directories and files
 .vscode/*
