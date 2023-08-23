@@ -4,27 +4,12 @@
 
 use std::io::prelude::*;
 
-const ROOK_BITS: [u64; 64] = [
-	12, 11, 11, 11, 11, 11, 11, 12,
-	11, 10, 10, 10, 10, 10, 10, 11,
-	11, 10, 10, 10, 10, 10, 10, 11,
-	11, 10, 10, 10, 10, 10, 10, 11,
-	11, 10, 10, 10, 10, 10, 10, 11,
-	11, 10, 10, 10, 10, 10, 10, 11,
-	11, 10, 10, 10, 10, 10, 10, 11,
-	12, 11, 11, 11, 11, 11, 11, 12
-];
-
-const BISHOP_BITS: [u64; 64] = [
-	6, 5, 5, 5, 5, 5, 5, 6,
-	5, 5, 5, 5, 5, 5, 5, 5,
-	5, 5, 7, 7, 7, 7, 5, 5,
-	5, 5, 7, 9, 9, 7, 5, 5,
-	5, 5, 7, 9, 9, 7, 5, 5,
-	5, 5, 7, 7, 7, 7, 5, 5,
-	5, 5, 5, 5, 5, 5, 5, 5,
-	6, 5, 5, 5, 5, 5, 5, 6
-];
+#[derive(Clone, Default)]
+struct Magic {
+	magic: u64,
+	bits: u64,
+	moves: Vec<u64>,
+}
 
 /// A really simple random u64 generator using /dev/urandom to avoid
 /// needing to depend on the `rand` crate.
@@ -36,20 +21,13 @@ fn random() -> u64 {
 	u64::from_be_bytes(buff)
 }
 
+#[derive(Copy, Clone)]
 enum BoardType {
 	Bishop,
 	Rook
 }
 
 impl BoardType {
-
-	pub fn bits_for_square(&self, square: u64) -> u64 {
-		match self {
-			Self::Bishop => BISHOP_BITS[square as usize],
-			Self::Rook => ROOK_BITS[square as usize],
-		}
-	}
-
 	pub fn mask_for_square(&self, square: u64) -> u64 {
 		match self {
 			Self::Bishop => self.bishop_mask(square),
@@ -57,10 +35,10 @@ impl BoardType {
 		}
 	}
 
-	pub fn blockers(&self, square: u64, blockers: u64) -> u64 {
+	pub fn moves(&self, square: u64, blockers: u64) -> u64 {
 		match self {
-			Self::Bishop => self.bishop_blockers(square, blockers),
-			Self::Rook => self.rook_blockers(square, blockers),
+			Self::Bishop => self.bishop_moves(square, blockers),
+			Self::Rook => self.rook_moves(square, blockers),
 		}
 	}
 
@@ -106,7 +84,7 @@ impl BoardType {
 		mask
 	}
 
-	fn bishop_blockers(&self, square: u64, blockers: u64) -> u64 {
+	fn bishop_moves(&self, square: u64, blockers: u64) -> u64 {
 		let mut mask = 0u64;
 		let rank = square / 8;
 		let file = square % 8;
@@ -146,7 +124,7 @@ impl BoardType {
 		mask
 	}
 
-	fn rook_blockers(&self, square: u64, blockers: u64) -> u64 {
+	fn rook_moves(&self, square: u64, blockers: u64) -> u64 {
 		let mut mask = 0;
 		let rank = square / 8;
 		let file = square % 8;
@@ -205,20 +183,20 @@ fn random_magic() -> u64 {
 	random() & random() & random()
 }
 
-fn find_magic(board_type: BoardType, square: u64) -> Option<u64> {
+fn find_magic(board_type: BoardType, square: u64, tx: std::sync::mpsc::Sender<(u64, Magic)>) {
 	let mask = board_type.mask_for_square(square);
-	let desired_magic_bits = board_type.bits_for_square(square);
+	let mut magic_bits = 12;
 	let num_ones = mask.count_ones() as u64;
 
 	let mut boards = [0; 4096];
-	let mut blockers = [0; 4096];
+	let mut moves = [0; 4096];
 
 	for i in 0..(1 << num_ones) {
 		boards[i] = index_to_u64(i as u64, num_ones, mask);
-		blockers[i] = board_type.blockers(square, boards[i]);
+		moves[i] = board_type.moves(square, boards[i]);
 	}
 
-	for _attempt in 0..100_000_000 {
+	'attempt_loop: loop {
 		let magic = random_magic();
 		if ((mask * magic) & 0xFF00000000000000).count_ones() < 6 {
 			// Probably a bad magic, just discard it and move on to another
@@ -226,57 +204,106 @@ fn find_magic(board_type: BoardType, square: u64) -> Option<u64> {
 		}
 
 		let mut used = [0; 4096];
-		let mut fail = false;
+		let mut magic_moves = [0; 4096];
 		for i in 0..(1 << num_ones) {
-			let position_index = (boards[i] * magic) >> (64 - desired_magic_bits);
+			let position_index = (boards[i] * magic) >> (64 - magic_bits);
 			if used[position_index as usize] == 0 {
 				// First time that the product of the position and the magic
 				// had this value, so we're okay so far. Store the map of the
 				// actual blocking pieces for this position.
-				used[position_index as usize] = blockers[i];
-			} else if used[position_index as usize] != blockers[i] {
+				used[position_index as usize] = moves[i];
+				magic_moves[position_index as usize] = moves[i];
+			} else if used[position_index as usize] != moves[i] {
 				// We can only share the same magic as another bit configuration
-				// the two are blocked by the same pieces, which means that
+				// if the two are blocked by the same pieces, which means that
 				// the valid moves are the same even if there's other pieces
-				// behind those blockers.
-				fail = true;
+				// behind those moves.
+				continue 'attempt_loop;
 			}
 		}
 
-		if !fail {
-			return Some(magic);
-		}
+		let magic_struct = Magic { magic, bits: magic_bits, moves: Vec::from(magic_moves) };
+		tx.send((square, magic_struct)).unwrap();
+		magic_bits -= 1;
 	}
-
-	None
 }
 
-fn write_magics(name: &str, magics: &[u64], file: &mut std::fs::File) {
-	file.write_fmt(format_args!("pub const {}: [u64; 64] = [", name)).unwrap();
-	for i in 0..16 {
-		file.write(b"\n\t").unwrap();
-		for j in 0..4 {
-			let index = i * 4 + j;
-			file.write_fmt(format_args!("0x{:016x}, ", magics[index])).unwrap();
-		}
+fn create_magic_file(board_type: BoardType, file_name: &str, stats_tx: std::sync::mpsc::Sender<(u64, u32)>) {
+	let (tx, rx) = std::sync::mpsc::channel();
+	let mut magics = Vec::with_capacity(64);
+
+	for square in 0..64 {
+		magics.push(Magic::default());
+		let tx_clone = tx.clone();
+		let _ = std::thread::spawn(move || find_magic(board_type, square as u64, tx_clone));
 	}
-	file.write(b"\n];\n").unwrap();
+
+
+	loop {
+		if let Ok((square, magic)) = rx.recv() {
+			magics[square as usize] = magic;
+		}
+
+		let mut num_found = 0;
+		let mut total_size = 0;
+		for Magic { magic, bits, .. } in &magics {
+			if *magic == 0 {
+				total_size += 2u32.pow(12) * 8 / 1024;
+			} else {
+				num_found += 1;
+				total_size += 2u32.pow(*bits as u32) * 8 / 1024;
+			}
+		}
+
+		if num_found == 64 {
+			let mut magics_file = std::fs::File::create(file_name).unwrap();
+			magics_file.write(b"[\n").unwrap();
+			for Magic { magic, bits, moves } in &magics {
+				magics_file.write(b"\t{\n").unwrap();
+				magics_file.write_fmt(format_args!(
+					"\t\t\"magic\": \"0x{magic:016x}\",\n\t\t\"bits\": {bits},\n\t\t\"moves\": [\n"
+				)).unwrap();
+				let x = moves.iter()
+					.take(2usize.pow(*bits as u32))
+					.map(|m| format!("\t\t\t\"0x{m:016x}\""))
+					.reduce(|acc, s| acc + ",\n" + &s)
+					.unwrap_or_default();
+				magics_file.write(x.as_bytes()).unwrap();			
+				magics_file.write(b"\n\t\t]\n\t},\n").unwrap();
+			}
+			magics_file.write(b"]").unwrap();
+		}
+
+		stats_tx.send((num_found, total_size)).unwrap();
+	}
 }
 
 fn main() {
+	let (bishop_tx, bishop_rx) = std::sync::mpsc::channel();
+	let (rook_tx, rook_rx) = std::sync::mpsc::channel();
 
-	let rook_magics = (0..64)
-		.map(|square| find_magic(BoardType::Rook, square))
-		.collect::<Option<Vec<u64>>>()
-		.expect("Failed to create all rook magic numbers");
+	let _ = std::thread::spawn(move || create_magic_file(BoardType::Bishop, "bishop_magics.json", bishop_tx));
+	let _ = std::thread::spawn(move || create_magic_file(BoardType::Rook, "rook_magics.json", rook_tx));
 
-	let bishop_magics = (0..64)
-		.map(|square| find_magic(BoardType::Bishop, square))
-		.collect::<Option<Vec<u64>>>()
-		.expect("Failed to create all bishop magic numbers");
 
-	let mut output_file = std::fs::File::create("core/src/position/magics.rs").unwrap();
-	write_magics("ROOK_MAGICS", &rook_magics, &mut output_file);
-	write_magics("BISHOP_MAGICS", &bishop_magics, &mut output_file);
-	
+	let mut bishops_found = 0;
+	let mut bishops_size = 2048;
+	let mut rooks_found = 0;
+	let mut rooks_size = 2048;
+
+	loop {
+		if let Ok((found, size)) = bishop_rx.try_recv() {
+			bishops_found = found;
+			bishops_size = size; 
+		}
+		if let Ok((found, size)) = rook_rx.try_recv() {
+			rooks_found = found;
+			rooks_size = size;
+		}
+
+		print!(
+			"Bishops: {:02}/64, {:04}KB Rooks: {:02}/64, {:04}KB\r",
+			bishops_found, bishops_size, rooks_found, rooks_size,
+		);
+	}
 }

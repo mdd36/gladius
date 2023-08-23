@@ -5,3 +5,8 @@ edition = "2021"
 authors = [ "Matthew Dickson hi@mattdickson.io"]
 
 [dependencies]
+async-trait = "0.1"
+tokio = "1.30"
+
+[dev-dependencies]
+indoc = "2.0"

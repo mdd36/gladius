@@ -1,5 +1,6 @@
-pub mod board;
+#[rustfmt::skip]
 pub mod magics;
+pub mod board;
 pub mod moves;
 
 use std::ops::BitOrAssign;

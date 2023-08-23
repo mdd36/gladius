@@ -4,6 +4,8 @@ Cargo.lock
 # Build artifacts
 target
 magic_finder
+rook_magics.json
+bishop_magics.json
 
 # Editor directories and files
 .vscode/*
