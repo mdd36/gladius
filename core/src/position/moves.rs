@@ -1,4 +1,4 @@
-use super::{board::Square, Piece};
+use super::{board::Square, Piece, Position};
 
 /// Various settings that could be true for a move. For example, if a capture
 /// occurred, if there's an en passant square after the move, or if a promotion
@@ -28,7 +28,7 @@ impl std::fmt::Debug for MoveFlags {
 			.field("En Passant", &en_passant)
 			.field("Queen Castle", &queen_castle)
 			.field("King Castle", &king_castle)
-			.field("Promotions", &promotion)
+			.field("Promotion", &promotion)
 			.finish()
 	}
 }
@@ -100,26 +100,7 @@ impl From<&str> for Move {
 	/// );
 	/// ```
 	fn from(value: &str) -> Self {
-		let promotion_piece = if value.len() == 5 {
-			match &value[5..5] {
-				"q" | "Q" => Some(Piece::Queen),
-				"r" | "R" => Some(Piece::Rook),
-				"b" | "B" => Some(Piece::Bishop),
-				"n" | "N" => Some(Piece::Knight),
-				_ => None,
-			}
-		} else {
-			None
-		};
-
-		Self {
-			flags: MoveFlags(0),
-			start: Square::from_algebraic_notion(&value[..2]),
-			target: Square::from_algebraic_notion(&value[2..4]),
-			promotion_piece,
-			piece: Piece::Bishop,
-			captured_piece: None,
-		}
+		todo!()
 	}
 }
 
@@ -142,4 +123,49 @@ impl Move {
 			None
 		}
 	}
+}
+
+pub fn parse_move(move_str: &str, position: &Position) -> Move {
+	let metadata = position.metadata;
+	let start = Square::from_algebraic_notion(&move_str[0..2]);
+	let target = Square::from_algebraic_notion(&move_str[2..4]);
+
+	let promotion_piece = if move_str.len() == 5 {
+		match &move_str[5..5] {
+			"q" | "Q" => Some(Piece::Queen),
+			"r" | "R" => Some(Piece::Rook),
+			"b" | "B" => Some(Piece::Bishop),
+			"n" | "N" => Some(Piece::Knight),
+			_ => None,
+		}
+	} else {
+		None
+	};
+
+	let piece = position.piece_on(start).unwrap();
+
+	// TODO check that the moving piece is a pawn
+	let is_en_passant = match metadata.en_passant_square() {
+		Some(en_passant_square) => en_passant_square == target && piece == Piece::Pawn,
+		None => false,
+	};
+
+	let captured_piece = if is_en_passant {
+		Some(Piece::Pawn)
+	} else {
+		position.piece_on(target)
+	};
+
+	Move {
+		flags: MoveFlags(0),
+		start,
+		target,
+		promotion_piece,
+		piece,
+		captured_piece,
+	}
+}
+
+pub fn generate_moves(position: &Position) -> Box<[Move]> {
+	todo!()
 }

@@ -29,6 +29,21 @@ pub enum Piece {
 	King,
 }
 
+impl Piece {
+	pub fn iter() -> impl Iterator<Item = Piece> {
+		[
+			Piece::Pawn,
+			Piece::Rook,
+			Piece::King,
+			Piece::Bishop,
+			Piece::Queen,
+			Piece::King,
+		]
+		.iter()
+		.copied()
+	}
+}
+
 /// 16 bits packed to represent the metadata for a given position.
 /// Packing looks like this, starting with the most significant bits:
 ///
@@ -357,6 +372,26 @@ impl Position {
 		has_rights && (occupied_spaced & pass_through_squares == 0)
 	}
 
+	/// Check what piece is on a square, if any.
+	pub fn piece_on(&self, square: Square) -> Option<Piece> {
+		for piece in Piece::iter() {
+			if self.get_board_for_piece(piece).is_occupied(square) {
+				return Some(piece);
+			}
+		}
+		None
+	}
+
+	pub fn color_on(&self, square: Square) -> Option<Color> {
+		if self.get_board_for_color(Color::White).is_occupied(square) {
+			Some(Color::White)
+		} else if self.get_board_for_color(Color::Black).is_occupied(square) {
+			Some(Color::Black)
+		} else {
+			None
+		}
+	}
+
 	pub fn apply_move(&self, next_move: moves::Move) -> Position {
 		let color_to_move = self.metadata.to_move() as usize;
 		let moved_piece = next_move.piece as usize;
@@ -429,16 +464,16 @@ impl Position {
 	///
 	/// ```
 	/// use gladius_core::position::Position;
-	/// 
+	///
 	/// let start_position_string = indoc::indoc! {"
-	/// 	♜ ♞ ♝ ♛ ♚ ♝ ♞ ♜ 
-	///		♟ ♟ ♟ ♟ ♟ ♟ ♟ ♟ 
-	///		▢ ▧ ▢ ▧ ▢ ▧ ▢ ▧ 
-	///		▧ ▢ ▧ ▢ ▧ ▢ ▧ ▢ 
-	///		▢ ▧ ▢ ▧ ▢ ▧ ▢ ▧ 
-	///		▧ ▢ ▧ ▢ ▧ ▢ ▧ ▢ 
-	///		♙ ♙ ♙ ♙ ♙ ♙ ♙ ♙ 
-	///		♖ ♘ ♗ ♕ ♔ ♗ ♘ ♖ 
+	/// 	♜ ♞ ♝ ♛ ♚ ♝ ♞ ♜
+	///		♟ ♟ ♟ ♟ ♟ ♟ ♟ ♟
+	///		▢ ▧ ▢ ▧ ▢ ▧ ▢ ▧
+	///		▧ ▢ ▧ ▢ ▧ ▢ ▧ ▢
+	///		▢ ▧ ▢ ▧ ▢ ▧ ▢ ▧
+	///		▧ ▢ ▧ ▢ ▧ ▢ ▧ ▢
+	///		♙ ♙ ♙ ♙ ♙ ♙ ♙ ♙
+	///		♖ ♘ ♗ ♕ ♔ ♗ ♘ ♖
 	/// "};
 	///
 	/// assert_eq!(
@@ -563,35 +598,31 @@ mod test {
 
 	#[test]
 	pub fn can_castle_king_side() {
-		assert!(
-			Position::from_fen(
-				"rnbqkb1r/pppp1pp1/4pn2/7p/2B1P3/5PPN/PPPP3P/RNBQK2R w KQkq - 0 1"
-			)
-			.unwrap()
-			.can_castle(Color::White, CastleSide::King));
+		assert!(Position::from_fen(
+			"rnbqkb1r/pppp1pp1/4pn2/7p/2B1P3/5PPN/PPPP3P/RNBQK2R w KQkq - 0 1"
+		)
+		.unwrap()
+		.can_castle(Color::White, CastleSide::King));
 
-			assert!(
-				Position::from_fen(
-					"rnbqk2r/ppp2ppp/5n2/3pp3/1b1PP3/2N2P2/PPPB2PP/R2QKBNR b KQkq - 0 1"
-				)
-				.unwrap()
-				.can_castle(Color::Black, CastleSide::King));
+		assert!(Position::from_fen(
+			"rnbqk2r/ppp2ppp/5n2/3pp3/1b1PP3/2N2P2/PPPB2PP/R2QKBNR b KQkq - 0 1"
+		)
+		.unwrap()
+		.can_castle(Color::Black, CastleSide::King));
 	}
 
 	#[test]
 	pub fn can_castle_queen_side() {
-		assert!(
-			Position::from_fen(
-				"r1bqkbnr/ppp2ppp/2n5/3pp3/3P4/2NQB3/PPP1PPPP/R3KBNR w KQkq - 0 1"
-				)
-			.unwrap()
-			.can_castle(Color::White, CastleSide::Queen));
+		assert!(Position::from_fen(
+			"r1bqkbnr/ppp2ppp/2n5/3pp3/3P4/2NQB3/PPP1PPPP/R3KBNR w KQkq - 0 1"
+		)
+		.unwrap()
+		.can_castle(Color::White, CastleSide::Queen));
 
 		assert!(
-			Position::from_fen(
-				"r3kbnr/pppppppp/b1n5/5q2/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1"
-				)
-			.unwrap()
-			.can_castle(Color::Black, CastleSide::Queen));
+			Position::from_fen("r3kbnr/pppppppp/b1n5/5q2/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1")
+				.unwrap()
+				.can_castle(Color::Black, CastleSide::Queen)
+		);
 	}
 }

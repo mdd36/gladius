@@ -85,6 +85,13 @@ impl Square {
 		Self(board)
 	}
 
+	/// Get the index of the only bit set to one, representing the selected square.
+	/// This allows the engine to use the square to index into arrays of attacks
+	/// based on the square of the piece.
+	pub fn as_bit_index(&self) -> u32 {
+		self.0.trailing_zeros()
+	}
+
 	/// See the square as a raw u64.
 	pub fn as_u64(&self) -> u64 {
 		self.0
@@ -254,6 +261,10 @@ impl BitXorAssign<u64> for Board {
 impl Board {
 	pub fn as_u64(&self) -> u64 {
 		self.0
+	}
+
+	pub fn is_occupied(&self, square: Square) -> bool {
+		self.0 & square.0 != 0
 	}
 
 	pub fn is_empty(&self) -> bool {

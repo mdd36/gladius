@@ -1,4 +1,7 @@
 
+/// This file basically just holds the generated magic
+/// numbers and the array of moves for indexing. It's
+/// basically a data file.
 pub enum BoardArray {
 	Four([u64; 16]),
 	Five([u64; 32]),
