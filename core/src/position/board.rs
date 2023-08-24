@@ -1,9 +1,13 @@
-use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXorAssign, ShlAssign};
+use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXorAssign, ShlAssign, Mul, BitXor, Not};
 
 pub const WHITE_QUEEN_ROOK: Square = Square(0x8000000000000000);
 pub const WHITE_KING_ROOK: Square = Square(0x0100000000000000);
 pub const BLACK_QUEEN_ROOK: Square = Square(0x0000000000000080);
 pub const BLACK_KING_ROOK: Square = Square(0x0000000000000001);
+
+pub const KING_START: [Square; 2] = [Square(0x0000000000000010), Square(0x1000000000000000)];
+pub const KING_CASTLE_SQUARE:[Square; 2] = [Square(0x0000000000000040), Square(0x4000000000000000)];
+pub const QUEEN_CASTLE_SQUARE:[Square; 2] = [Square(0x0000000000000004), Square(0x0400000000000000)];
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct Square(u64);
@@ -70,6 +74,11 @@ impl Square {
 		Self::from_rank_and_file(rank, file)
 	}
 
+	pub fn from_lsb_index(index: u32) -> Self {
+		let index = index as u8;
+		Self::from_rank_and_file(index / 8, index % 8)
+	}
+
 	/// Convert a 0-indexed rank and file into a [`Square`]
 	///
 	/// ### Examples:
@@ -97,6 +106,11 @@ impl Square {
 		self.0
 	}
 
+	// Get the square as a usize
+	pub fn as_usize(&self) -> usize {
+		self.0 as usize
+	}
+
 	/// Represent this square by its rank and file in a string.
 	///
 	/// ### Example
@@ -121,6 +135,11 @@ impl Square {
 
 	pub fn rank(&self) -> u8 {
 		(self.0.trailing_zeros() / 8 + 1) as u8
+	}
+
+	pub fn manhattan_distance(&self, other: Square) -> u8 {
+		self.rank().abs_diff(other.rank()) 
+			+ self.file().abs_diff(other.file())
 	}
 
 	/// To make it easier to grok the position, Debug is implemented to
@@ -172,6 +191,36 @@ impl From<u64> for Board {
 	}
 }
 
+impl Iterator for Board {
+    type Item = Square;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.0 == 0 {
+					None
+				} else {
+					let lsb_index = self.0.trailing_zeros();
+					*self = Self(self.0 & self.0 - 1);
+					Some(Square::from_lsb_index(lsb_index))
+				}
+    }
+}
+
+impl Mul<usize> for Board {
+    type Output = usize;
+
+    fn mul(self, rhs: usize) -> Self::Output {
+			 rhs * self.0 as usize
+    }
+}
+
+impl Not for Board {
+    type Output = Self;
+
+    fn not(self) -> Self::Output {
+			Self(!self.0)
+    }
+}
+
 impl BitAndAssign for Board {
 	fn bitand_assign(&mut self, rhs: Self) {
 		*self = Self(self.0 & rhs.0);
@@ -196,11 +245,19 @@ impl BitOrAssign<u64> for Board {
 	}
 }
 
+impl BitAnd for Board {
+    type Output = Self;
+
+    fn bitand(self, rhs: Self) -> Self::Output {
+			Self(self.0 & rhs.0)
+		}
+}
+
 impl BitAnd<u64> for Board {
-	type Output = u64;
+	type Output = Self;
 
 	fn bitand(self, rhs: u64) -> Self::Output {
-		self.0 & rhs
+		Self(self.0 & rhs)
 	}
 }
 
@@ -226,6 +283,14 @@ impl BitOr<Square> for Board {
 	fn bitor(self, rhs: Square) -> Self::Output {
 		Self(self.0 | rhs.0)
 	}
+}
+
+impl BitXor for Board {
+    type Output = Self;
+
+    fn bitxor(self, rhs: Self) -> Self::Output {
+			Self(self.0 ^ rhs.0)
+    }
 }
 
 impl BitXorAssign<Square> for Board {
@@ -261,6 +326,10 @@ impl BitXorAssign<u64> for Board {
 impl Board {
 	pub fn as_u64(&self) -> u64 {
 		self.0
+	}
+
+	pub fn as_usize(&self) -> usize {
+		self.0 as usize
 	}
 
 	pub fn is_occupied(&self, square: Square) -> bool {

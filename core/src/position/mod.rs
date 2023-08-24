@@ -2,10 +2,13 @@
 pub mod magics;
 pub mod board;
 pub mod moves;
+pub mod attacks;
 
 use std::ops::BitOrAssign;
 
 use board::{Board, Square, BLACK_KING_ROOK, BLACK_QUEEN_ROOK, WHITE_KING_ROOK, WHITE_QUEEN_ROOK};
+
+use self::moves::MOVE_DIRECTION;
 
 #[derive(Copy, Clone)]
 pub enum CastleSide {
@@ -17,6 +20,17 @@ pub enum CastleSide {
 pub enum Color {
 	White,
 	Black,
+}
+
+impl std::ops::Not for Color {
+    type Output = Color;
+
+    fn not(self) -> Self::Output {
+			match self {
+				Self::White => Self::Black,
+				Self::Black => Self::White,
+			}
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -369,7 +383,7 @@ impl Position {
 
 		let has_rights = self.metadata.can_castle(color, side);
 
-		has_rights && (occupied_spaced & pass_through_squares == 0)
+		has_rights && (occupied_spaced & pass_through_squares).is_empty()
 	}
 
 	/// Check what piece is on a square, if any.
@@ -394,13 +408,13 @@ impl Position {
 
 	pub fn apply_move(&self, next_move: moves::Move) -> Position {
 		let color_to_move = self.metadata.to_move() as usize;
-		let moved_piece = next_move.piece as usize;
+		let moved_piece = self.piece_on(next_move.start).unwrap();
 		let flags = next_move.flags;
 
 		let mut boards = self.boards.clone();
 
 		// TODO profile if this branching is a big penalty
-		if let Some(captured_piece) = next_move.captured_piece {
+		if let Some(captured_piece) = self.piece_on(next_move.target) {
 			boards[1 - color_to_move] ^= next_move.target;
 			boards[captured_piece as usize] ^= next_move.target;
 		} else if flags.is_king_castle() {
@@ -418,9 +432,9 @@ impl Position {
 		}
 
 		boards[color_to_move] ^= next_move.start | next_move.target;
-		boards[moved_piece] ^= next_move.start | next_move.target;
+		boards[moved_piece as usize] ^= next_move.start | next_move.target;
 
-		if let Some(piece) = next_move.promotion_piece {
+		if let Some(piece) = flags.promotion_piece() {
 			boards[Piece::Pawn as usize] ^= next_move.target;
 			boards[piece as usize] ^= next_move.target;
 		}
@@ -429,8 +443,16 @@ impl Position {
 		let mut metadata = self.metadata;
 
 		// Set en passant square
-		if let Some(en_passant_square) = next_move.en_passant_square() {
-			metadata.set_en_passant_square(en_passant_square);
+		if flags.is_double_pawn_push() {
+			let en_passant_file = next_move.start.file();
+			let en_passant_rank = next_move.start.rank() as i8 + MOVE_DIRECTION[color_to_move];
+
+			metadata.set_en_passant_square(
+				Square::from_rank_and_file(
+					en_passant_rank as u8,
+					en_passant_file,
+				)
+			);
 		}
 
 		// Flip to move
@@ -446,12 +468,12 @@ impl Position {
 			metadata.revoke_castling_rights(Color::Black, CastleSide::King);
 		} else if next_move.start == BLACK_QUEEN_ROOK || next_move.target == BLACK_QUEEN_ROOK {
 			metadata.revoke_castling_rights(Color::Black, CastleSide::Queen);
-		} else if next_move.piece == Piece::King {
+		} else if moved_piece == Piece::King {
 			metadata.revoke_castling_rights_for_color(self.metadata.to_move());
 		}
 
 		// Increment half move clock, if needed
-		if next_move.captured_piece.is_some() || next_move.piece == Piece::Pawn {
+		if flags.is_capture() || moved_piece == Piece::Pawn {
 			metadata.reset_move_clock();
 		} else {
 			metadata.increment_half_move();

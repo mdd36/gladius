@@ -1,7 +1,7 @@
-use super::board::Board;
+use super::{board::{Board, Square}, Piece, magics};
 
-pub const KNIGHT_ATTACKS: [Board; 64] = generate_attacks(KNIGHT_MOVES);
-pub const KING_ATTACKS: [Board; 64] = generate_attacks(KING_MOVES);
+pub const KNIGHT_ATTACKS: [u64; 64] = generate_attacks(KNIGHT_MOVES);
+pub const KING_ATTACKS: [u64; 64] = generate_attacks(KING_MOVES);
 
 #[derive(Copy, Clone)]
 enum Direction {
@@ -13,45 +13,6 @@ enum Direction {
 	SouthWest = -9,
 	West = -1,
 	NorthWest = 7,
-}
-
-impl Direction {
-	pub fn diagonals() -> impl Iterator<Item = Direction> {
-		[
-			Direction::NorthEast,
-			Direction::SouthEast,
-			Direction::SouthWest,
-			Direction::NorthWest,
-		]
-		.iter()
-		.copied()
-	}
-
-	pub fn cardinal_directions() -> impl Iterator<Item = Direction> {
-		[
-			Direction::North,
-			Direction::East,
-			Direction::South,
-			Direction::West,
-		]
-		.iter()
-		.copied()
-	}
-
-	pub fn iter() -> impl Iterator<Item = Direction> {
-		[
-			Direction::North,
-			Direction::NorthEast,
-			Direction::East,
-			Direction::SouthEast,
-			Direction::South,
-			Direction::SouthWest,
-			Direction::West,
-			Direction::NorthWest,
-		]
-		.iter()
-		.copied()
-	}
 }
 
 const KNIGHT_MOVES: [i8; 8] = [
@@ -76,8 +37,8 @@ const KING_MOVES: [i8; 8] = [
 	Direction::NorthWest as i8,
 ];
 
-const fn generate_attacks(move_board: [i8; 8]) -> [Board; 64] {
-	let mut boards = [Board::default(); 64];
+const fn generate_attacks(move_board: [i8; 8]) -> [u64; 64] {
+	let mut boards = [0; 64];
 	let mut position_index = 0i8;
 	while position_index < 64 {
 		let file = position_index % 8;
@@ -91,22 +52,44 @@ const fn generate_attacks(move_board: [i8; 8]) -> [Board; 64] {
 			}
 			move_index += 1;
 		}
-		boards[position_index as usize] = Board::from(board);
+		boards[position_index as usize] = board;
 		position_index += 1;
 	}
 	boards
 }
 
-const ROOK_ATTACKS: [[Board; 4096]; 64] = todo!();
-const BISHOP_ATTACKS: [[Board; 4096]; 64] = todo!();
+pub fn get_attacks(position: Board, square: Square, piece: Piece) -> Board {
+	match piece {
+		Piece::Pawn => todo!(), // Maybe pawns should be calculated elsewhere? So many edge cases
+		Piece::Knight => Board::from(KNIGHT_ATTACKS[square.as_usize()]),
+		Piece::King => Board::from(KING_ATTACKS[square.as_usize()]),
+		Piece::Rook => {
+			let square = square.as_usize();
+			let magic = magics::ROOK_MAGICS[square];
+			let shift = magics::ROOK_MAGIC_SHIFT[square];
+			let magic_index = (position * magic) >> shift;
+			Board::from(magics::ROOK_BOARDS[square][magic_index])
+		}
+		Piece::Bishop => {
+			let square = square.as_usize();
+			let magic = magics::BISHOP_MAGICS[square];
+			let shift = magics::BISHOP_MAGIC_SHIFT[square];
+			let magic_index = (position * magic) >> shift;
+			Board::from(magics::BISHOP_BOARDS[square][magic_index])
+		}
+		Piece::Queen => {
+			let square = square.as_usize();
+			let rook_magic = magics::ROOK_MAGICS[square];
+			let rook_shift = magics::ROOK_MAGIC_SHIFT[square];
+			let rook_magic_index = (position * rook_magic) >> rook_shift;
+			let rook_board = Board::from(magics::ROOK_BOARDS[square][rook_magic_index]);
 
-const fn generate_sliding_attacks() -> [[Board; 4096]; 64] {
-	let mut boards = [[Board::default(); 4096]; 64];
-	let position_index = 0;
-	while position_index < 64 {
-		
+			let bishop_magic = magics::BISHOP_MAGICS[square];
+			let bishop_shift = magics::BISHOP_MAGIC_SHIFT[square];
+			let bishop_magic_index = (position * bishop_magic) >> bishop_shift;
+			let bishop_board = Board::from(magics::BISHOP_BOARDS[square][bishop_magic_index]);
+
+			bishop_board | rook_board
+		}
 	}
-	
-	boards
 }
-
