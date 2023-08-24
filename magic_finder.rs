@@ -51,15 +51,15 @@ impl BoardType {
 			mask |= 1 << f + r * 8;
 		}
 
-		for (r, f) in (rank+1..7).zip((0..file).rev()) {
+		for (r, f) in (rank+1..7).zip((1..file).rev()) {
 			mask |= 1 << f + r * 8;
 		}
 
-		for (r, f) in (0..rank).rev().zip(file+1..7) {
+		for (r, f) in (1..rank).rev().zip(file+1..7) {
 			mask |= 1 << f + r * 8;
 		}
 
-		for (r, f) in (0..rank).rev().zip((0..file).rev()) {
+		for (r, f) in (1..rank).rev().zip((1..file).rev()) {
 			mask |= 1 << f + r * 8;
 		}
 
@@ -71,13 +71,19 @@ impl BoardType {
 		let rank = square / 8;
 		let file = square % 8;
 
-		for r in 1..7 {
-			if r == rank { continue; }
+		for r in (rank+1)..7 {
+			mask |= 1 << file + r * 8;
+		}
+
+		for r in (1..rank).rev() {
 			mask |= 1 << file + r * 8;
 		}
 
 		for f in (file+1)..7 {
-			if f == file { continue; }
+			mask |= 1 << f + rank * 8;
+		}
+
+		for f in (1..file).rev() {
 			mask |= 1 << f + rank * 8;
 		}
 
@@ -89,7 +95,7 @@ impl BoardType {
 		let rank = square / 8;
 		let file = square % 8;
 
-		for (r, f) in (rank+1..7).zip(file+1..7) {
+		for (r, f) in (rank+1..8).zip(file+1..8) {
 			let attacked_square = 1 << f + r * 8;
 			mask |= attacked_square;
 			if attacked_square & blockers != 0 {
@@ -97,7 +103,7 @@ impl BoardType {
 			}
 		}
 
-		for (r, f) in (rank+1..7).zip((0..file).rev()) {
+		for (r, f) in (rank+1..8).zip((0..file).rev()) {
 			let attacked_square = 1 << f + r * 8;
 			mask |= attacked_square;
 			if attacked_square & blockers != 0 {
@@ -105,7 +111,7 @@ impl BoardType {
 			}
 		}
 
-		for (r, f) in (0..rank).rev().zip(file+1..7) {
+		for (r, f) in (0..rank).rev().zip(file+1..8) {
 			let attacked_square = 1 << f + r * 8;
 			mask |= attacked_square;
 			if attacked_square & blockers != 0 {
@@ -198,7 +204,8 @@ fn find_magic(board_type: BoardType, square: u64, tx: std::sync::mpsc::Sender<(u
 
 	'attempt_loop: loop {
 		let magic = random_magic();
-		if ((mask * magic) & 0xFF00000000000000).count_ones() < 6 {
+		let magic_product = magic.wrapping_mul(mask);
+		if (magic_product & 0xFF00000000000000).count_ones() < 6 {
 			// Probably a bad magic, just discard it and move on to another
 			continue;
 		}
@@ -206,7 +213,7 @@ fn find_magic(board_type: BoardType, square: u64, tx: std::sync::mpsc::Sender<(u
 		let mut used = [0; 4096];
 		let mut magic_moves = [0; 4096];
 		for i in 0..(1 << num_ones) {
-			let position_index = (boards[i] * magic) >> (64 - magic_bits);
+			let position_index = (boards[i].wrapping_mul(magic)) >> (64 - magic_bits);
 			if used[position_index as usize] == 0 {
 				// First time that the product of the position and the magic
 				// had this value, so we're okay so far. Store the map of the
