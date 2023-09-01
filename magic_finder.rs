@@ -4,11 +4,23 @@
 
 use std::io::prelude::*;
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct Magic {
 	magic: u64,
 	bits: u64,
-	moves: Vec<u64>,
+	mask: u64,
+	moves: [u64; 4096],
+}
+
+impl Default for Magic {
+	fn default() -> Self {
+		Self {
+			magic: 0,
+			bits: 0,
+			mask: 0,
+			moves: [0; 4096],
+		}
+	}
 }
 
 /// A really simple random u64 generator using /dev/urandom to avoid
@@ -91,13 +103,13 @@ impl BoardType {
 	}
 
 	fn bishop_moves(&self, square: u64, blockers: u64) -> u64 {
-		let mut mask = 0u64;
+		let mut moves = 0u64;
 		let rank = square / 8;
 		let file = square % 8;
 
 		for (r, f) in (rank+1..8).zip(file+1..8) {
 			let attacked_square = 1 << f + r * 8;
-			mask |= attacked_square;
+			moves |= attacked_square;
 			if attacked_square & blockers != 0 {
 				break;
 			}
@@ -105,7 +117,7 @@ impl BoardType {
 
 		for (r, f) in (rank+1..8).zip((0..file).rev()) {
 			let attacked_square = 1 << f + r * 8;
-			mask |= attacked_square;
+			moves |= attacked_square;
 			if attacked_square & blockers != 0 {
 				break;
 			}
@@ -113,7 +125,7 @@ impl BoardType {
 
 		for (r, f) in (0..rank).rev().zip(file+1..8) {
 			let attacked_square = 1 << f + r * 8;
-			mask |= attacked_square;
+			moves |= attacked_square;
 			if attacked_square & blockers != 0 {
 				break;
 			}
@@ -121,23 +133,23 @@ impl BoardType {
 
 		for (r, f) in (0..rank).rev().zip((0..file).rev()) {
 			let attacked_square = 1 << f + r * 8;
-			mask |= attacked_square;
+			moves |= attacked_square;
 			if attacked_square & blockers != 0 {
 				break;
 			}
 		}
 
-		mask
+		moves
 	}
 
 	fn rook_moves(&self, square: u64, blockers: u64) -> u64 {
-		let mut mask = 0;
+		let mut moves = 0;
 		let rank = square / 8;
 		let file = square % 8;
 
 		for r in rank+1..8 {
 			let attacked_square = 1 << (file + (8 * r));
-			mask |= attacked_square;
+			moves |= attacked_square;
 			if blockers & attacked_square != 0 { 
 				break;
 			}
@@ -145,7 +157,7 @@ impl BoardType {
 
 		for r in (0..rank).rev() {
 			let attacked_square = 1 << (file + (8 * r));
-			mask |= attacked_square;
+			moves |= attacked_square;
 			if blockers & attacked_square != 0 { 
 				break;
 			}
@@ -153,7 +165,7 @@ impl BoardType {
 
 		for f in file+1..8 {
 			let attacked_square = 1 << (f + (8 * rank));
-			mask |= attacked_square;
+			moves |= attacked_square;
 			if blockers & attacked_square != 0 { 
 				break;
 			}
@@ -161,31 +173,30 @@ impl BoardType {
 
 		for f in (0..file).rev() {
 			let attacked_square = 1 << (f + (8 * rank));
-			mask |= attacked_square;
+			moves |= attacked_square;
 			if blockers & attacked_square != 0 { 
 				break;
 			}
 		}
 
-		mask
+		moves
 	}
 }
 
-fn index_to_u64(index: u64, num_ones: u64, mut mask: u64) -> u64 {
-	let mut result = 0u64;
+fn gen_all_blocker_configurations(mask: u64) -> [u64; 4096] {
+	let mut blocker_boards = [0; 4096];
+	let mut current_board = 0u64;
 
-	for i in 0..num_ones {
-		let lsb_index = mask.trailing_zeros();
-		mask &= mask - 1; // Drop least significant bit set to 1
-		if index & (1 << i) != 0 {
-			result |= 1 << lsb_index;
-		}
+	for i in 0..(1 << mask.count_ones()) {
+		blocker_boards[i as usize] = current_board;
+		current_board = (current_board.wrapping_sub(mask)) & mask;
 	}
 
-	result
+	blocker_boards
 }
 
 fn random_magic() -> u64 {
+	// Want a sparse number, so we'll thin the random with ands
 	random() & random() & random()
 }
 
@@ -194,42 +205,33 @@ fn find_magic(board_type: BoardType, square: u64, tx: std::sync::mpsc::Sender<(u
 	let mut magic_bits = 12;
 	let num_ones = mask.count_ones() as u64;
 
-	let mut boards = [0; 4096];
+	let blocker_boards = gen_all_blocker_configurations(mask);
 	let mut moves = [0; 4096];
 
 	for i in 0..(1 << num_ones) {
-		boards[i] = index_to_u64(i as u64, num_ones, mask);
-		moves[i] = board_type.moves(square, boards[i]);
+		moves[i] = board_type.moves(square, blocker_boards[i]);
 	}
 
 	'attempt_loop: loop {
 		let magic = random_magic();
-		let magic_product = magic.wrapping_mul(mask);
-		if (magic_product & 0xFF00000000000000).count_ones() < 6 {
-			// Probably a bad magic, just discard it and move on to another
-			continue;
-		}
 
 		let mut used = [0; 4096];
-		let mut magic_moves = [0; 4096];
 		for i in 0..(1 << num_ones) {
-			let position_index = (boards[i].wrapping_mul(magic)) >> (64 - magic_bits);
-			if used[position_index as usize] == 0 {
-				// First time that the product of the position and the magic
-				// had this value, so we're okay so far. Store the map of the
-				// actual blocking pieces for this position.
-				used[position_index as usize] = moves[i];
-				magic_moves[position_index as usize] = moves[i];
-			} else if used[position_index as usize] != moves[i] {
-				// We can only share the same magic as another bit configuration
+			let position_index = 
+				((blocker_boards[i].wrapping_mul(magic)) >> (64 - magic_bits)) as usize;
+			
+			if used[position_index] != 0 && used[position_index] != moves[i] {
+				// We can only share the same magic as another position
 				// if the two are blocked by the same pieces, which means that
 				// the valid moves are the same even if there's other pieces
-				// behind those moves.
+				// behind those blockers.
 				continue 'attempt_loop;
 			}
+
+			used[position_index] = moves[i];
 		}
 
-		let magic_struct = Magic { magic, bits: magic_bits, moves: Vec::from(magic_moves) };
+		let magic_struct = Magic { magic, bits: magic_bits, mask, moves: used };
 		tx.send((square, magic_struct)).unwrap();
 		magic_bits -= 1;
 	}
@@ -265,10 +267,10 @@ fn create_magic_file(board_type: BoardType, file_name: &str, stats_tx: std::sync
 		if num_found == 64 {
 			let mut magics_file = std::fs::File::create(file_name).unwrap();
 			magics_file.write(b"[\n").unwrap();
-			for Magic { magic, bits, moves } in &magics {
+			for Magic { magic, mask, bits, moves } in &magics {
 				magics_file.write(b"\t{\n").unwrap();
 				magics_file.write_fmt(format_args!(
-					"\t\t\"magic\": \"0x{magic:016x}\",\n\t\t\"bits\": {bits},\n\t\t\"moves\": [\n"
+					"\t\t\"magic\": \"0x{magic:016x}\",\n\t\t\"bits\": {bits},\n\t\t\"mask\": \"0x{mask:016x}\",\n\t\t\"moves\": [\n"
 				)).unwrap();
 				let x = moves.iter()
 					.take(2usize.pow(*bits as u32))

@@ -6,9 +6,10 @@ pub mod attacks;
 
 use std::ops::BitOrAssign;
 
-use board::{Board, Square, BLACK_KING_ROOK, BLACK_QUEEN_ROOK, WHITE_KING_ROOK, WHITE_QUEEN_ROOK};
+use board::{Board, Square, CASTLE_RIGHTS_SQUARES, ROOKS};
+use moves::MOVE_DIRECTION;
 
-use self::moves::MOVE_DIRECTION;
+use self::board::ROOK_CASTLE_MOVE;
 
 #[derive(Copy, Clone)]
 pub enum CastleSide {
@@ -48,7 +49,19 @@ impl Piece {
 		[
 			Piece::Pawn,
 			Piece::Rook,
+			Piece::Knight,
+			Piece::Bishop,
+			Piece::Queen,
 			Piece::King,
+		]
+		.iter()
+		.copied()
+	}
+
+	pub fn non_pawn() -> impl Iterator<Item = Piece> {
+		[
+			Piece::Rook,
+			Piece::Knight,
 			Piece::Bishop,
 			Piece::Queen,
 			Piece::King,
@@ -187,13 +200,13 @@ impl PositionMetadata {
 			return None;
 		}
 
-		let file = ((en_passant_bits & 0x7) + 1) as u64;
-		let rank_index = match self.to_move() {
-			Color::Black => 5,
-			Color::White => 2,
+		let file = (en_passant_bits & 0x7) as u8;
+		let rank = match self.to_move() {
+			Color::Black => 2,
+			Color::White => 5,
 		};
 
-		Some(Square::from(file << (8 * rank_index)))
+		Some(Square::from_rank_and_file(rank, file))
 	}
 
 	pub fn clear_en_passant(&mut self) {
@@ -201,14 +214,14 @@ impl PositionMetadata {
 	}
 
 	pub fn set_en_passant_square(&mut self, square: Square) {
-		let file = square.file() as u16 - 1 | 0b01;
+		let file = square.file() as u16;
 		let shifted_file = file << 11;
 
 		*self = Self(self.0 & !EN_PASSANT_MASK | EN_PASSANT_SET_MASK | shifted_file)
 	}
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Position {
 	pub boards: [Board; 8],
 	pub metadata: PositionMetadata,
@@ -327,7 +340,7 @@ impl Position {
 				'q' => position.metadata |= 0x0100,
 				'K' => position.metadata |= 0x0080,
 				'Q' => position.metadata |= 0x0040,
-				_ => return Err(()),
+				_ => {},
 			}
 		}
 
@@ -342,7 +355,10 @@ impl Position {
 		}
 
 		// Half move clock
-		let moves: u16 = fen_components.next().ok_or(())?.parse().unwrap();
+		let moves: u16 = fen_components.next()
+			.map(|clock| clock.parse().ok())
+			.flatten()
+			.unwrap_or(0);
 		position.metadata.0 += moves;
 
 		Ok(position)
@@ -356,34 +372,17 @@ impl Position {
 		self.boards[piece as usize]
 	}
 
-	/// Check if a given color can castle on a side. The rules for castling are:
-	///
-	/// - Neither the king nor the rook have been moved
-	/// - The king isn't under check
-	/// - The square that the king would move to isn't under check
-	/// - All squares between the rook and the king are unoccupied
-	///
-	/// ### Examples
-	/// ```
-	/// use gladius_core::position::{Position, Color, CastleSide};
-	///
-	/// // Can't castle from the starting position since there's pieces between
-	/// // the rook and king
-	/// assert_eq!(
-	///     false,
-	///     Position::default()
-	///     .can_castle(Color::Black, CastleSide::Queen)
-	/// );
-	/// ```
+	pub fn get_occupancy_board(&self) -> Board {
+		self.get_board_for_color(Color::White)
+			| self.get_board_for_color(Color::Black)
+	}
+
+	/// Check if a given color can castle on a side. This check only
+	/// determines if the player has rights to castle on a given side,
+	/// not that all conditions are met. Those are deferred to the
+	/// [`gladius_core::position::moves::is_legal`] check.
 	pub fn can_castle(&self, color: Color, side: CastleSide) -> bool {
-		let occupied_spaced =
-			self.boards[Color::White as usize] | self.boards[Color::Black as usize];
-		let pass_through_squares =
-			0x6u64 + (8 * (1 - side as u64)) << (4 * side as u64) << (56 * color as u64);
-
-		let has_rights = self.metadata.can_castle(color, side);
-
-		has_rights && (occupied_spaced & pass_through_squares).is_empty()
+		self.metadata.can_castle(color, side)
 	}
 
 	/// Check what piece is on a square, if any.
@@ -406,7 +405,7 @@ impl Position {
 		}
 	}
 
-	pub fn apply_move(&self, next_move: moves::Move) -> Position {
+	pub fn apply_move(&self, next_move: &moves::Move) -> Position {
 		let color_to_move = self.metadata.to_move() as usize;
 		let moved_piece = self.piece_on(next_move.start).unwrap();
 		let flags = next_move.flags;
@@ -417,16 +416,13 @@ impl Position {
 		if let Some(captured_piece) = self.piece_on(next_move.target) {
 			boards[1 - color_to_move] ^= next_move.target;
 			boards[captured_piece as usize] ^= next_move.target;
-		} else if flags.is_king_castle() {
+		} else if let Some(side) = flags.castling_side() {
 			// Move the Rook also
-			boards[Piece::Rook as usize] ^= 0x09 << (color_to_move * 56);
-		} else if flags.is_queen_castle() {
-			boards[Piece::Rook as usize] ^= 0x90 << (color_to_move * 56);
+			let rook_move = ROOK_CASTLE_MOVE[side as usize][color_to_move];
+			boards[Piece::Rook as usize] ^= rook_move;
+			boards[color_to_move] ^= rook_move;
 		} else if flags.is_en_passant() {
-			// TODO profile this vs a branch
-			let captured_piece_square = next_move.target.as_u64()
-                << 8 * color_to_move as u64 // Shift target up a rank if black
-                >> 8 * (1 - color_to_move as u64); // Shift target down a rank if white
+			let captured_piece_square = next_move.target >> (8 * MOVE_DIRECTION[color_to_move]);
 			boards[Piece::Pawn as usize] ^= captured_piece_square;
 			boards[1 - color_to_move] ^= captured_piece_square;
 		}
@@ -453,21 +449,23 @@ impl Position {
 					en_passant_file,
 				)
 			);
+		} else {
+			metadata.clear_en_passant();
 		}
 
 		// Flip to move
 		metadata.toggle_to_move();
 
 		// Adjust castling rights
-		// TODO profile how penalizing these branches are
-		if next_move.start == WHITE_KING_ROOK || next_move.target == WHITE_KING_ROOK {
-			metadata.revoke_castling_rights(Color::White, CastleSide::King);
-		} else if next_move.start == WHITE_QUEEN_ROOK || next_move.target == WHITE_QUEEN_ROOK {
-			metadata.revoke_castling_rights(Color::White, CastleSide::Queen);
-		} else if next_move.start == BLACK_KING_ROOK || next_move.target == BLACK_KING_ROOK {
-			metadata.revoke_castling_rights(Color::Black, CastleSide::King);
-		} else if next_move.start == BLACK_QUEEN_ROOK || next_move.target == BLACK_QUEEN_ROOK {
-			metadata.revoke_castling_rights(Color::Black, CastleSide::Queen);
+		if ((next_move.start | next_move.target) & CASTLE_RIGHTS_SQUARES).has_pieces() {
+			for side in [CastleSide::Queen, CastleSide::King] {
+				for color in [Color::White, Color::Black] {
+					let rook_square  = ROOKS[side as usize][color as usize];
+					if (next_move.target | next_move.start).is_occupied(rook_square) {
+						metadata.revoke_castling_rights(color, side);
+					}
+				}
+			}
 		} else if moved_piece == Piece::King {
 			metadata.revoke_castling_rights_for_color(self.metadata.to_move());
 		}
@@ -542,7 +540,7 @@ impl Position {
 				} else if (self.get_board_for_piece(Piece::Rook) & square).has_pieces() {
 					2
 				} else if (self.get_board_for_piece(Piece::Bishop) & square).has_pieces() {
-					3
+					2
 				} else if (self.get_board_for_piece(Piece::Knight) & square).has_pieces() {
 					4
 				} else {

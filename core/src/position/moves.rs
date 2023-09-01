@@ -1,8 +1,7 @@
-use super::{board::{Square, KING_START, KING_CASTLE_SQUARE, QUEEN_CASTLE_SQUARE}, Piece, Position, attacks, CastleSide};
+use super::{board::{Square, KING_START, KING_CASTLE_SQUARE, QUEEN_CASTLE_SQUARE, Board, ray, A_FILE, H_FILE, FIRST_RANK, EIGHTH_RANK, between, ROOKS}, Piece, Position, attacks, CastleSide, Color};
 
 pub const MOVE_DIRECTION: [i8; 2] = [1, -1];
 pub const STARTING_PAWNS: [u64; 2] = [0x000000000000ff00, 0x00ff000000000000];
-pub const BACK_RANK: [u8; 2] = [7, 0];
 
 /// Various settings that could be true for a move. For example, if a capture
 /// occurred, if there's an en passant square after the move, or if a promotion
@@ -15,7 +14,7 @@ pub const BACK_RANK: [u8; 2] = [7, 0];
 /// machine word) used as the discriminate in vanilla enums. In an effort to use
 /// as few dependencies as possible for my own amusement, I've also opted out of
 /// using the `primitive_enum` crate.
-#[derive(Copy, Clone, Default)]
+#[derive(Copy, Clone, Default, Eq, PartialEq)]
 pub struct MoveFlags(u8);
 
 impl std::fmt::Debug for MoveFlags {
@@ -117,11 +116,23 @@ impl MoveFlags {
 	} 
 
 	pub fn is_capture(&self) -> bool {
-		self.0 == 4  || self.0 == 5  || self.0 >= 12
+		self.0 & 4 != 0
 	}
 
 	pub fn is_en_passant(&self) -> bool {
 		self.0 == 5
+	}
+
+	pub fn is_castling(&self) -> bool {
+		self.is_queen_castle() || self.is_king_castle()
+	}
+
+	pub fn castling_side(&self) -> Option<CastleSide> {
+		match self.0 {
+			2 => Some(CastleSide::King),
+			3 => Some(CastleSide::Queen),
+			_ => None
+		}
 	}
 
 	pub fn is_queen_castle(&self) -> bool {
@@ -133,50 +144,32 @@ impl MoveFlags {
 	}
 
 	pub fn is_promotion(&self) -> bool {
-		self.0 >= 8
+		self.0 & 8 != 0
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct Move {
 	pub flags: MoveFlags,
 	pub start: Square,
 	pub target: Square,
 }
 
-impl From<&str> for Move {
-	/// Create a move from a string that describes the starting square and the
-	/// ending square, in that order, using algebraic notation.
-	///
-	/// ### Examples:
-	///
-	/// ```
-	/// use gladius_core::position::{Move, Square};
-	///
-	/// let first_move = Move::from("g1f3"); // White's king's side horse to f3
-	/// let second_move = Move::from("e7e5"); // Black's queen pawn moves forward
-	///
-	/// assert_eq!(
-	///   first_move.start,
-	///   Square::from_algebraic_notion("g1")
-	/// );
-	/// assert_eq!(
-	///   first_move.target,
-	///   Square::from_algebraic_notion("f3")
-	/// );
-	///
-	/// assert_eq!(
-	///   second_move.start,
-	///   Square::from_algebraic_notion("e7")
-	/// );
-	/// assert_eq!(
-	///   second_move.target,
-	///   Square::from_algebraic_notion("e5")
-	/// );
-	/// ```
-	fn from(value: &str) -> Self {
-		todo!()
-	}
+impl std::fmt::Display for Move {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(piece) = self.flags.promotion_piece() {
+					let piece_string = match piece {
+						Piece::Knight => "n",
+						Piece::Rook => "r",
+						Piece::Bishop => "b",
+						Piece::Queen => "q",
+						_ => "",
+					};
+					write!(f, "{}{}{}", self.start.as_algebraic_notation(), self.target.as_algebraic_notation(), piece_string)
+				} else {
+					write!(f, "{}{}", self.start.as_algebraic_notation(), self.target.as_algebraic_notation())
+				}
+    }
 }
 
 pub fn parse_move(move_str: &str, position: &Position) -> Move {
@@ -265,12 +258,16 @@ pub fn generate_moves(position: &Position) -> Vec<Move> {
 
 	let mut moves = Vec::new();
 
+	// Find all the absolute pins, which prevents a piece from moving.
+	// En passant pins are handled separately.
+	let pins = pins(position);
+
 	// Normal moves for the less weird pieces
-	standard_moves_for_piece(Piece::Rook, position, &mut moves);
-	standard_moves_for_piece(Piece::Knight, position, &mut moves);
-	standard_moves_for_piece(Piece::Bishop, position, &mut moves);
-	standard_moves_for_piece(Piece::Queen, position, &mut moves);
-	standard_moves_for_piece(Piece::King, position, &mut moves);
+	standard_moves_for_piece(Piece::Rook, position, pins, &mut moves);
+	standard_moves_for_piece(Piece::Knight, position, pins, &mut moves);
+	standard_moves_for_piece(Piece::Bishop, position, pins, &mut moves);
+	standard_moves_for_piece(Piece::Queen, position, pins, &mut moves);
+	standard_moves_for_piece(Piece::King, position, pins, &mut moves);
 
 	// Castling
 	if metadata.can_castle(to_move, CastleSide::King) {
@@ -285,25 +282,34 @@ pub fn generate_moves(position: &Position) -> Vec<Move> {
 		moves.push(Move { start, target, flags: MoveFlags::queen_castling() });
 	}
 
-	// Pawns (ugh)
-	pawn_single_moves(position, &mut moves);
-	pawn_double_moves(position, &mut moves);
+	// Pawns
+	pawn_single_moves(position, pins, &mut moves);
+	pawn_double_moves(position, pins, &mut moves);
 
-	moves
+
+
+	moves.into_iter()
+		.filter(|m| is_legal(position, m))
+		.collect()
 }
 
 /// Get all the standard moves for a piece, eg the ones that are created by it executing
 /// the normal way it moves. It excludes things like castling and pawns, since pawns have
 /// *so many edge cases*.
-fn standard_moves_for_piece(piece: Piece, position: &Position, moves: &mut Vec<Move>) {
+fn standard_moves_for_piece(piece: Piece, position: &Position, pins: Board, moves: &mut Vec<Move>) {
 	let board_piece = position.get_board_for_piece(piece);
-	let to_move_color_board = position.get_board_for_color(position.metadata.to_move());
-	let opponent_board = position.get_board_for_color(!position.metadata.to_move());
-	let total_occupancy = to_move_color_board | opponent_board; 
+	let to_move_color = position.metadata.to_move();
+	let to_move_color_board = position.get_board_for_color(to_move_color);
+	let opponent_board = position.get_board_for_color(!to_move_color);
+	let total_occupancy = position.get_occupancy_board(); 
 	let piece_of_color = board_piece & to_move_color_board;
+	let king_square = Square::from(position.get_board_for_piece(Piece::King) & to_move_color_board);
 
 	for square in piece_of_color {
-		let attacks = attacks::get_attacks(total_occupancy, square, piece) & !to_move_color_board;
+		let pin_limitation = pin_mask(pins, king_square, square);	
+		let attacks = attacks::get_attacks(total_occupancy, square, piece, to_move_color) 
+			& !to_move_color_board
+			& pin_limitation;
 		for attacked_square in attacks {
 			let flags = if opponent_board.is_occupied(attacked_square) {
 				MoveFlags::capture()
@@ -315,23 +321,24 @@ fn standard_moves_for_piece(piece: Piece, position: &Position, moves: &mut Vec<M
 	}
 }
 
-fn pawn_single_moves(position: &Position, moves: &mut Vec<Move>) {
+fn pawn_single_moves(position: &Position, pins: Board, moves: &mut Vec<Move>) {
 	let to_move_color = position.metadata.to_move();
 	let board_piece = position.get_board_for_piece(Piece::Pawn);
 	let to_move_color_board = position.get_board_for_color(position.metadata.to_move());
 	let opponent_board = position.get_board_for_color(!position.metadata.to_move());
-	let total_occupancy = to_move_color_board | opponent_board; 
+	let total_occupancy = position.get_occupancy_board(); 
 	let piece_of_color = board_piece & to_move_color_board;
 	let move_direction = MOVE_DIRECTION[to_move_color as usize];
-	let back_rank = BACK_RANK[to_move_color as usize];
 	let en_passant_square = position.metadata.en_passant_square();
+	let king_square = Square::from(position.get_board_for_piece(Piece::King) & to_move_color_board);
+	let promotion_ranks = FIRST_RANK | EIGHTH_RANK;
 
 	for start in piece_of_color {
 		// Single forward push
-		let next_rank = (start.rank() as i8 + move_direction) as u8;
-		let target = Square::from_rank_and_file(next_rank, start.file());
-		if !total_occupancy.is_occupied(target) {
-			if next_rank == back_rank {
+		let target = start << (8 * move_direction);
+		let pin_limitation = pin_mask(pins, king_square, start);
+		if !total_occupancy.is_occupied(target) && pin_limitation.is_occupied(target) {
+			if promotion_ranks.is_occupied(target) {
 				moves.push(Move { start, target, flags: MoveFlags::knight_promotion() });
 				moves.push(Move { start, target, flags: MoveFlags::bishop_promotion() });
 				moves.push(Move { start, target, flags: MoveFlags::rook_promotion() });
@@ -340,46 +347,576 @@ fn pawn_single_moves(position: &Position, moves: &mut Vec<Move>) {
 				moves.push(Move { start, target, flags: MoveFlags::quiet_move() });
 			}
 		}
+	}
 
-		// Left diagonal attacks and en passant
-		let left_file = start.file() as i8 - 1;
-		if left_file > 0 {
-			let target = Square::from_rank_and_file(next_rank, left_file as u8);
-			let targeting_en_passant = en_passant_square.map(|sq| sq == target).unwrap_or(false);
-			if opponent_board.is_occupied(target) {
-				moves.push(Move { start, target,  flags: MoveFlags::capture() });
-			} else if targeting_en_passant {
-				moves.push(Move { start, target, flags: MoveFlags::en_passant() })
+	// Diagonal attacks and en passant
+	for start in piece_of_color & !A_FILE {
+		let target = start << ((8 - move_direction) * move_direction);
+		let pin_limitation = pin_mask(pins, king_square, start);
+		if opponent_board.is_occupied(target) && pin_limitation.is_occupied(target) {
+				if promotion_ranks.is_occupied(target) {
+					moves.push(Move { start, target, flags: MoveFlags::knight_promotion_capture() });
+					moves.push(Move { start, target, flags: MoveFlags::bishop_promotion_capture() });
+					moves.push(Move { start, target, flags: MoveFlags::rook_promotion_capture() });
+					moves.push(Move { start, target, flags: MoveFlags::queen_promotion_capture() });
+				} else {
+					moves.push(Move { start, target,  flags: MoveFlags::capture() });
+				}
+			} else if en_passant_square.map(|sq| sq == target).unwrap_or(false) {
+				moves.push(Move { start, target, flags: MoveFlags::en_passant() });
 			}
-		}
+	}
 
-		// Right diagonal attacks and en passant
-		let right_file = start.file() + 1;
-		if right_file < 8 {
-			let target = Square::from_rank_and_file(next_rank, right_file);
-			let targeting_en_passant = en_passant_square.map(|sq| sq == target).unwrap_or(false);
-			if opponent_board.is_occupied(target) {
+	for start in piece_of_color & !H_FILE {
+		let target = start << ((8 + move_direction) * move_direction);
+		let pin_limitation = pin_mask(pins, king_square, start);
+		if opponent_board.is_occupied(target) && pin_limitation.is_occupied(target) {
+			if promotion_ranks.is_occupied(target) {
+				moves.push(Move { start, target, flags: MoveFlags::knight_promotion_capture() });
+				moves.push(Move { start, target, flags: MoveFlags::bishop_promotion_capture() });
+				moves.push(Move { start, target, flags: MoveFlags::rook_promotion_capture() });
+				moves.push(Move { start, target, flags: MoveFlags::queen_promotion_capture() });
+			} else {
 				moves.push(Move { start, target,  flags: MoveFlags::capture() });
-			} else if targeting_en_passant {
-				moves.push(Move { start, target, flags: MoveFlags::en_passant() })
 			}
+		} else if en_passant_square.map(|sq| sq == target).unwrap_or(false) {
+			moves.push(Move { start, target, flags: MoveFlags::en_passant() });
 		}
 	}
 }
 
-fn pawn_double_moves(position: &Position, moves: &mut Vec<Move>) {
+fn pawn_double_moves(position: &Position, pins: Board, moves: &mut Vec<Move>) {
 	let to_move_color = position.metadata.to_move();
 	let board_piece = position.get_board_for_piece(Piece::Pawn) & STARTING_PAWNS[to_move_color as usize];
 	let to_move_color_board = position.get_board_for_color(position.metadata.to_move());
-	let opponent_board = position.get_board_for_color(!position.metadata.to_move());
-	let total_occupancy = to_move_color_board | opponent_board; 
+	let total_occupancy = position.get_occupancy_board(); 
 	let piece_of_color = board_piece & to_move_color_board;
+	let king_square = Square::from(position.get_board_for_piece(Piece::King) & to_move_color_board);
 
 	for start in piece_of_color {
-		let target_rank = (start.rank() as i8 + MOVE_DIRECTION[to_move_color as usize] * 2) as u8;
-		let target = Square::from_rank_and_file(target_rank, start.file());
-		if !total_occupancy.is_occupied(target) {
+		let pin_limitation = pin_mask(pins, king_square, start);
+		let skip_square = start << (8 * MOVE_DIRECTION[to_move_color as usize]);
+		let target = start << (16 * MOVE_DIRECTION[to_move_color as usize]);
+		let required_empty = skip_square | target;
+		if (total_occupancy & required_empty).is_empty() && pin_limitation.is_occupied(target) {
 			moves.push(Move { start, target, flags: MoveFlags::double_pawn_push() });
 		}
 	}
-} 
+}
+
+fn is_legal(position: &Position, proposed_move: &Move) -> bool {
+	let to_move_color = position.metadata.to_move();
+	let moved_piece = position.piece_on(proposed_move.start).unwrap();
+
+	let king_square = Square::from(
+		position.get_board_for_color(to_move_color) & position.get_board_for_piece(Piece::King)
+	);
+	
+	let check_attackers = attacks::attackers_of_square(king_square, !to_move_color, position);
+	let num_checkers = check_attackers.count_ones();
+	
+	if let Some(side) = proposed_move.flags.castling_side() {
+		let occupancy = position.get_occupancy_board();
+		let rook_square = ROOKS[side as usize][to_move_color as usize];
+		let attacked_squares = attacks::get_attacked_squares(position, !to_move_color);
+		let king_path = between(proposed_move.start, proposed_move.target) | king_square;
+		let between_rook_and_king = between(king_square, rook_square) ^ rook_square;
+		// No attacks allowed on the square the king passes through when castling,
+		// and the squares must be empty
+		return (attacked_squares & king_path).is_empty() 
+			&& (occupancy & between_rook_and_king).is_empty();
+	}
+
+	if proposed_move.flags == MoveFlags::en_passant() {
+		// Look for checks resulting from or broken by en passant.
+		let next_position = position.apply_move(proposed_move);
+		let our_king = position.get_board_for_color(to_move_color)
+			& position.get_board_for_piece(Piece::King);
+		let attacks_on_king = attacks::attackers_of_square(our_king.into(), !to_move_color, &next_position);
+		return attacks_on_king.is_empty();
+	}
+
+	if moved_piece == Piece::King {
+		let attacked_squares = attacks::get_attacked_squares(&position.apply_move(proposed_move), !to_move_color);
+		return !attacked_squares.is_occupied(proposed_move.target);
+	} else if num_checkers > 1 {
+		// Can't make anything but a king move during double check
+		return false;
+	} else if num_checkers > 0 {
+		let check_blocking_squares = between(king_square, check_attackers.into());
+		// Either block the check or take the sole attacker
+		return check_blocking_squares.is_occupied(proposed_move.target)
+			|| check_attackers.is_occupied(proposed_move.target); 
+	}
+
+	true
+}
+
+fn pin_mask(pins: Board, king_square: Square, to_move_square: Square) -> Board {
+	if pins.is_occupied(to_move_square) {
+		ray(king_square, to_move_square) // Can only move along the direction of the attacker's pin
+	} else {
+		Board::full()
+	}
+}
+
+/// Find all pieces that are pinned to our king. A piece is considered absolutely
+/// pinned if moving it would create a discovered attack on the king; for example,
+/// if a white bishop is the only piece between the white king a black rook, then
+/// the white bishop is absolutely pinned -- moving it would let the rook attack
+/// its king!
+/// 
+/// A piece might be pinned, but still have valid moves, like if a white rook is 
+/// blocking a black rook's attack on the white king -- the white rook can move
+/// between its king and the black rook, even capturing it if it wants,
+/// but it can't move off the rank or file of the enemy rook.
+/// 
+/// We calculate a board of pinned pieces by pretending that our king is an enemy
+/// sliding piece, then checking the overlap of its attacks with the actual enemy
+/// sliding pieces. If they overlap on only a single square, that means that they 
+/// both are attacking the same piece and hence that piece is the only thing preventing
+/// an attack on our king. Thanks to the chess programming wiki for this very clever
+/// algorithm!
+/// https://www.chessprogramming.org/Checks_and_Pinned_Pieces_(Bitboards)#Opposite_Ray-Directions
+/// 
+fn pins(position: &Position) -> Board {
+	let to_move_color = position.metadata.to_move();
+	let king_board = position.get_board_for_color(to_move_color) 
+		& position.get_board_for_piece(Piece::King);
+	let king_square = Square::from(king_board);
+
+	let friendly_board = position.get_board_for_color(to_move_color);
+	let enemy_board = position.get_board_for_color(!to_move_color);
+	let occupancy = position.get_occupancy_board();
+
+	let attacking_rqs = ( // Attacks from rooks and queens
+		position.get_board_for_piece(Piece::Rook) | position.get_board_for_piece(Piece::Queen)
+	) & attacks::get_attacks(king_board, king_square, Piece::Rook, to_move_color)
+	& enemy_board;
+
+	let attacking_bqs = ( // Attacks from bishops and queens
+		position.get_board_for_piece(Piece::Bishop) | position.get_board_for_piece(Piece::Queen)
+	) 
+	& attacks::get_attacks(king_board, king_square, Piece::Bishop, to_move_color)
+	& enemy_board;
+
+	let mut pin_board = Board::default();
+
+	for square in attacking_rqs {
+		let blockers = between(king_square, square) & occupancy ^ square;
+		if blockers.count_ones() == 1 {
+			// Both sides can block, but only our side is considered pinned
+			pin_board |= blockers & friendly_board; 
+		}
+	}
+
+	for square in attacking_bqs {
+		let blockers = between(king_square, square) & occupancy ^ square;
+		if blockers.count_ones() == 1 {
+			pin_board |= blockers & friendly_board;
+		}
+	}
+	
+	pin_board
+}
+
+#[cfg(test)]
+mod test {
+	use super::*;
+	use pretty_assertions::assert_eq;
+
+	#[test]
+	pub fn rook_move_test() {
+		let position = Position::from_fen(
+			"8/2k5/2p5/4b3/2R2PK1/8/2n5/8 w - - 0 1"
+		).unwrap();
+
+		let rook_square = Square::from_algebraic_notion("c4");
+		let expected_moves = vec![
+			Move { start: rook_square, target: Square::from_algebraic_notion("c2"), flags: MoveFlags::capture() },
+			Move { start: rook_square, target: Square::from_algebraic_notion("c3"), flags: MoveFlags::quiet_move() },
+			Move { start: rook_square, target: Square::from_algebraic_notion("a4"), flags: MoveFlags::quiet_move() },
+			Move { start: rook_square, target: Square::from_algebraic_notion("b4"), flags: MoveFlags::quiet_move() },
+			Move { start: rook_square, target: Square::from_algebraic_notion("d4"), flags: MoveFlags::quiet_move() },
+			Move { start: rook_square, target: Square::from_algebraic_notion("e4"), flags: MoveFlags::quiet_move() },
+			Move { start: rook_square, target: Square::from_algebraic_notion("c5"), flags: MoveFlags::quiet_move() },
+			Move { start: rook_square, target: Square::from_algebraic_notion("c6"), flags: MoveFlags::capture() },
+		];
+		
+		let actual_moves: Vec<Move> = generate_moves(&position).into_iter()
+			.filter(|m| m.start == rook_square) 
+			.collect();
+		
+		assert_eq!(actual_moves, expected_moves);
+	}
+
+	#[test]
+	pub fn knight_move_test() {
+		let position = Position::from_fen(
+			"8/8/8/5p1k/8/6N1/4P3/5K2 w - - 0 1"
+		).unwrap();
+
+		let knight_square = Square::from_algebraic_notion("g3");
+		let expected_moves = vec![
+			Move { start: knight_square, target: Square::from_algebraic_notion("h1"), flags: MoveFlags::quiet_move() },
+			Move { start: knight_square, target: Square::from_algebraic_notion("e4"), flags: MoveFlags::quiet_move() },
+			Move { start: knight_square, target: Square::from_algebraic_notion("f5"), flags: MoveFlags::capture() },
+			Move { start: knight_square, target: Square::from_algebraic_notion("h5"), flags: MoveFlags::capture() },
+		];
+
+		let actual_moves: Vec<Move> = generate_moves(&position).into_iter()
+		.filter(|m| m.start == knight_square)
+		.collect();
+	
+		assert_eq!(actual_moves, expected_moves);
+	}
+
+	#[test]
+	pub fn bishop_move_test() {
+		let position = Position::from_fen(
+			"2k5/pp6/8/8/4B3/8/2R5/1n4K1 w - - 0 1"
+		).unwrap();
+
+		let bishop_square = Square::from_algebraic_notion("e4");
+		let expected_moves = vec![
+			Move { start: bishop_square, target: Square::from_algebraic_notion("h1"), flags: MoveFlags::quiet_move() },
+			Move { start: bishop_square, target: Square::from_algebraic_notion("g2"), flags: MoveFlags::quiet_move() },
+			Move { start: bishop_square, target: Square::from_algebraic_notion("d3"), flags: MoveFlags::quiet_move() },
+			Move { start: bishop_square, target: Square::from_algebraic_notion("f3"), flags: MoveFlags::quiet_move() },
+			Move { start: bishop_square, target: Square::from_algebraic_notion("d5"), flags: MoveFlags::quiet_move() },
+			Move { start: bishop_square, target: Square::from_algebraic_notion("f5"), flags: MoveFlags::quiet_move() },
+			Move { start: bishop_square, target: Square::from_algebraic_notion("c6"), flags: MoveFlags::quiet_move() },
+			Move { start: bishop_square, target: Square::from_algebraic_notion("g6"), flags: MoveFlags::quiet_move() },
+			Move { start: bishop_square, target: Square::from_algebraic_notion("b7"), flags: MoveFlags::capture() },
+			Move { start: bishop_square, target: Square::from_algebraic_notion("h7"), flags: MoveFlags::quiet_move() },
+		];
+
+		let actual_moves: Vec<Move> = generate_moves(&position).into_iter()
+			.filter(|m| m.start == bishop_square)
+			.collect();
+
+		assert_eq!(actual_moves, expected_moves);
+	}
+
+	#[test]
+	pub fn queen_move_test() {
+		let position = Position::from_fen(
+			"2k5/pp6/4n3/1b4p1/8/4Q3/2R5/1n4K1 w - - 0 1"
+		).unwrap();
+
+		let queen_square = Square::from_algebraic_notion("e3");
+		let expected_moves = vec![
+			Move { start: queen_square, target: Square::from_algebraic_notion("c1"), flags: MoveFlags::quiet_move() },
+			Move { start: queen_square, target: Square::from_algebraic_notion("e1"), flags: MoveFlags::quiet_move() },
+			Move { start: queen_square, target: Square::from_algebraic_notion("d2"), flags: MoveFlags::quiet_move() },
+			Move { start: queen_square, target: Square::from_algebraic_notion("e2"), flags: MoveFlags::quiet_move() },
+			Move { start: queen_square, target: Square::from_algebraic_notion("f2"), flags: MoveFlags::quiet_move() },
+			Move { start: queen_square, target: Square::from_algebraic_notion("a3"), flags: MoveFlags::quiet_move() },
+			Move { start: queen_square, target: Square::from_algebraic_notion("b3"), flags: MoveFlags::quiet_move() },
+			Move { start: queen_square, target: Square::from_algebraic_notion("c3"), flags: MoveFlags::quiet_move() },
+			Move { start: queen_square, target: Square::from_algebraic_notion("d3"), flags: MoveFlags::quiet_move() },
+			Move { start: queen_square, target: Square::from_algebraic_notion("f3"), flags: MoveFlags::quiet_move() },
+			Move { start: queen_square, target: Square::from_algebraic_notion("g3"), flags: MoveFlags::quiet_move() },
+			Move { start: queen_square, target: Square::from_algebraic_notion("h3"), flags: MoveFlags::quiet_move() },
+			Move { start: queen_square, target: Square::from_algebraic_notion("d4"), flags: MoveFlags::quiet_move() },
+			Move { start: queen_square, target: Square::from_algebraic_notion("e4"), flags: MoveFlags::quiet_move() },
+			Move { start: queen_square, target: Square::from_algebraic_notion("f4"), flags: MoveFlags::quiet_move() },
+			Move { start: queen_square, target: Square::from_algebraic_notion("c5"), flags: MoveFlags::quiet_move() },
+			Move { start: queen_square, target: Square::from_algebraic_notion("e5"), flags: MoveFlags::quiet_move() },
+			Move { start: queen_square, target: Square::from_algebraic_notion("g5"), flags: MoveFlags::capture() },
+			Move { start: queen_square, target: Square::from_algebraic_notion("b6"), flags: MoveFlags::quiet_move() },
+			Move { start: queen_square, target: Square::from_algebraic_notion("e6"), flags: MoveFlags::capture() },
+			Move { start: queen_square, target: Square::from_algebraic_notion("a7"), flags: MoveFlags::capture() },
+		];
+		
+		let actual_moves: Vec<Move> = generate_moves(&position).into_iter()
+			.filter(|m| m.start == queen_square)
+			.collect();
+
+		assert_eq!(actual_moves, expected_moves);
+	}
+
+	#[test]
+	pub fn king_move_test() {
+		let position = Position::from_fen(
+			"2k5/pp6/4n3/2b3p1/8/4Q3/2R3pP/1n4K1 w - - 0 1"
+		).unwrap();
+
+		let king_square = Square::from_algebraic_notion("g1");
+		let expected_moves = vec![
+			Move { start: king_square, target: Square::from_algebraic_notion("f2"), flags: MoveFlags::quiet_move() },
+			Move { start: king_square, target: Square::from_algebraic_notion("g2"), flags: MoveFlags::capture() },
+		];
+
+		let actual_moves: Vec<Move> = generate_moves(&position).into_iter()
+			.filter(|m| m.start == king_square)
+			.collect();
+
+		assert_eq!(actual_moves, expected_moves);	
+	}
+
+	#[test]
+	pub fn castling_test() {
+		let position = Position::from_fen(
+			"2k5/pp6/4n3/6p1/5pb1/6P1/2R2P1P/1n2K2R w K - 0 1"
+		).unwrap();
+
+		let king_square = Square::from_algebraic_notion("e1");
+		let destination_square = Square::from_algebraic_notion("g1");
+
+		let actual_move = generate_moves(&position).into_iter()
+			.find(|m| m.start == king_square && m.target == destination_square);
+		
+		assert!(actual_move.is_some());
+		assert!(actual_move.unwrap().flags == MoveFlags::king_castling());
+
+		let position = Position::from_fen(
+			"2k5/pp6/3nn3/6p1/5pb1/6P1/4PP1P/R3K2R w KQ - 0 1"
+		).unwrap();
+
+		let destination_square = Square::from_algebraic_notion("c1");
+
+		let actual_move = generate_moves(&position).into_iter()
+			.find(|m| m.start == king_square && m.target == destination_square);
+		
+		assert!(actual_move.is_some());
+		assert!(actual_move.unwrap().flags == MoveFlags::queen_castling());
+	}
+
+	#[test]
+	pub fn cannot_move_into_check_test() {
+		let position = Position::from_fen(
+			"2k5/pp6/1b1nn3/6p1/5pb1/6P1/r6P/R3K2R w KQ - 0 1"
+		).unwrap();
+
+		let king_square = Square::from_algebraic_notion("e1");
+		let expected_moves = vec![
+			Move { start: king_square, target: Square::from_algebraic_notion("f1"), flags: MoveFlags::quiet_move() },
+		];
+
+		let actual_moves: Vec<Move> = generate_moves(&position).into_iter()
+			.filter(|m| m.start == king_square)
+			.collect();
+
+		assert_eq!(actual_moves, expected_moves);
+	}
+
+	#[test]
+	pub fn pin_test() {
+		let position = Position::from_fen(
+			"2k5/pp6/3nn3/6p1/1b3pb1/6P1/r2Q3P/R3K2R w KQ - 0 1"
+		).unwrap();
+
+		let queen_square = Square::from_algebraic_notion("d2");
+		let expected_moves = vec![
+			Move { start: queen_square, target: Square::from_algebraic_notion("c3"), flags: MoveFlags::quiet_move() },
+			Move { start: queen_square, target: Square::from_algebraic_notion("b4"), flags: MoveFlags::capture() },
+		];
+
+		let actual_moves: Vec<Move> = generate_moves(&position).into_iter()
+			.filter(|m| m.start == queen_square)
+			.collect();
+	
+		assert_eq!(actual_moves, expected_moves);
+	}
+
+	#[test]
+	pub fn en_passant_pin_test() {
+		let position = Position::from_fen(
+			"3k4/8/8/KPp4r/8/8/8/8 w - c6 0 1"
+		).unwrap();
+		
+		let pawn_square = Square::from_algebraic_notion("b5");
+		let expected_moves = vec![
+			Move { start: pawn_square, target: Square::from_algebraic_notion("b6"), flags: MoveFlags::quiet_move() },
+		];
+
+		let actual_moves: Vec<Move> = generate_moves(&position).into_iter()
+			.filter(|m| m.start == pawn_square)
+			.collect();
+		assert_eq!(actual_moves, expected_moves);
+	}
+
+	#[test]
+	pub fn pawn_single_move_test() {
+		let position = Position::from_fen(
+			"2k5/pp6/4n1p1/7P/5pP1/1n6/5P1P/R3K2R b K g3 0 1"
+		).unwrap();
+
+		let pawn_square = Square::from_algebraic_notion("g6");
+		let expected_moves = vec![
+			Move { start: pawn_square, target: Square::from_algebraic_notion("g5"), flags: MoveFlags::quiet_move() },
+			Move { start: pawn_square, target: Square::from_algebraic_notion("h5"), flags: MoveFlags::capture() },
+		];
+
+		let actual_moves: Vec<Move> = generate_moves(&position).into_iter()
+			.filter(|m| m.start == pawn_square)
+			.collect();
+
+		assert_eq!(actual_moves, expected_moves);
+	}
+
+	#[test]
+	pub fn pawn_double_move_test() {
+		let position = Position::from_fen(
+			"2k5/pp6/4n1p1/8/5pP1/1n6/5P1P/R3K2R b K g3 0 1"
+		).unwrap();
+
+		let pawn_square = Square::from_algebraic_notion("b7");
+		let expected_moves = vec![
+			Move { start: pawn_square, target: Square::from_algebraic_notion("b6"), flags: MoveFlags::quiet_move() },
+			Move { start: pawn_square, target: Square::from_algebraic_notion("b5"), flags: MoveFlags::double_pawn_push() },
+		];
+
+		let actual_move: Vec<Move> = generate_moves(&position).into_iter()
+			.filter(|m| m.start == pawn_square)
+			.collect();
+		
+		assert_eq!(actual_move, expected_moves);
+	}
+
+	#[test]
+	pub fn pawn_en_passant_test() {
+		let position = Position::from_fen(
+			"2k5/pp6/4n1p1/8/5pP1/1n6/5P1P/R3K2R b K g3 0 1"
+		).unwrap();
+
+		let pawn_square = Square::from_algebraic_notion("f4");
+		let expected_moves = vec![
+			Move { start: pawn_square, target: Square::from_algebraic_notion("f3"), flags: MoveFlags::quiet_move() },
+			Move { start: pawn_square, target: Square::from_algebraic_notion("g3"), flags: MoveFlags::en_passant() },
+		];
+
+		let actual_move: Vec<Move> = generate_moves(&position).into_iter()
+			.filter(|m| m.start == pawn_square)
+			.collect();
+		
+		assert_eq!(actual_move, expected_moves);
+	}
+
+	#[test]
+	pub fn pawn_promotion_test() {
+		let position = Position::from_fen(
+			"2k3n1/pp5P/4n1p1/8/5pP1/1n6/5P1P/R3K2R w K - 0 1"
+		).unwrap();
+
+		let pawn_square = Square::from_algebraic_notion("h7");
+		let expected_moves = vec![
+			Move { start: pawn_square, target: Square::from_algebraic_notion("h8"), flags: MoveFlags::knight_promotion() },
+			Move { start: pawn_square, target: Square::from_algebraic_notion("h8"), flags: MoveFlags::bishop_promotion() },
+			Move { start: pawn_square, target: Square::from_algebraic_notion("h8"), flags: MoveFlags::rook_promotion() },
+			Move { start: pawn_square, target: Square::from_algebraic_notion("h8"), flags: MoveFlags::queen_promotion() },
+			Move { start: pawn_square, target: Square::from_algebraic_notion("g8"), flags: MoveFlags::knight_promotion_capture() },
+			Move { start: pawn_square, target: Square::from_algebraic_notion("g8"), flags: MoveFlags::bishop_promotion_capture() },
+			Move { start: pawn_square, target: Square::from_algebraic_notion("g8"), flags: MoveFlags::rook_promotion_capture() },
+			Move { start: pawn_square, target: Square::from_algebraic_notion("g8"), flags: MoveFlags::queen_promotion_capture() },
+		];
+
+		let actual_moves: Vec<Move> = generate_moves(&position).into_iter()
+			.filter(|m| m.start == pawn_square)
+			.collect();
+		
+		assert_eq!(actual_moves, expected_moves);
+	}
+}
+
+pub fn divide(initial: Position, depth: u8) -> Vec<(String, usize)> {
+	let mut divided_moves = Vec::new();
+	let moves = generate_moves(&initial);
+
+	for	m in moves {
+		let mut total_positions = 1;
+		let mut positions = vec![initial.apply_move(&m)];
+		for _ in 1..depth {
+			let moves: Vec<Vec<Move>> = positions.iter()
+				.map(|pos| generate_moves(pos))
+				.collect();
+		
+			positions = moves.iter().zip(positions.iter())
+				.flat_map(|(m, pos)| {
+					return m.iter()
+						.map(|m| pos.apply_move(m))
+						.collect::<Vec<Position>>();
+				})
+				.collect();
+			total_positions = positions.len();
+		}
+		divided_moves.push((m.to_string(), total_positions));
+	}
+
+	divided_moves
+}
+
+#[cfg(test)]
+mod movegen_perft {
+
+	use super::*;
+	use pretty_assertions::assert_eq;
+
+	fn perft_test(intial_position: Position, expected_nodes: &[usize]) {
+		let mut positions = vec![intial_position];
+		for expected in expected_nodes {
+			positions = generate_next_positions(&positions);
+			assert_eq!(positions.len(), *expected);
+		}
+	}
+
+	fn pretty_print_divide(to_print: &Vec<(String, usize)>) {
+		for (move_string, node_count) in to_print {
+			println!("{move_string}: {node_count}");
+		}
+		println!("Moves: {}", to_print.len());
+		println!("Nodes: {}", to_print.iter().map(|tup| tup.1.to_owned()).sum::<usize>());
+	}
+
+	fn generate_next_positions(positions: &Vec<Position>) -> Vec<Position> {
+		let moves: Vec<Vec<Move>> = positions.iter()
+			.map(|pos| generate_moves(pos))
+			.collect();
+		
+		moves.iter().zip(positions.iter())
+			.flat_map(|(m, pos)| {
+				return m.iter()
+					.map(|m| pos.apply_move(m))
+					.collect::<Vec<Position>>();
+			})
+			.collect()
+	}
+
+	#[test]
+	pub fn from_starting() {
+		perft_test(Position::default(), &[20, 400, 8902, 197281, 4865609]);
+	}
+
+	#[test]
+	pub fn kiwipete() {
+		let starting_position = Position::from_fen(
+			"r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -"
+		).unwrap();
+		perft_test(starting_position, &[48, 2039, 97862, 4085603]);
+	}
+
+	#[test]
+	pub fn kiwipete_two() {
+		let starting_position = Position::from_fen(
+			"8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - -"
+		).unwrap();
+		perft_test(starting_position, &[14, 191, 2812, 43238, 674624]);
+	}
+
+	#[test]
+	pub fn kiwipete_three() {
+		let starting_position = Position::from_fen(
+			"r2q1rk1/pP1p2pp/Q4n2/bbp1p3/Np6/1B3NBn/pPPP1PPP/R3K2R b KQ - 0 1 "
+		).unwrap();
+		perft_test(starting_position, &[6, 264, 9467, 422333, 15833292]);
+	}
+
+	#[test]
+	pub fn promotion_heavy() {
+		let starting_position = Position::from_fen(
+			"n1n5/PPPk4/8/8/8/8/4Kppp/5N1N b - - 0 1"
+		).unwrap();
+		perft_test(starting_position, &[24, 496, 9483, 182838, 3605103]);
+	}
+}
