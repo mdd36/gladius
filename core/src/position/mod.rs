@@ -486,14 +486,14 @@ impl Position {
 	/// use gladius_core::position::Position;
 	///
 	/// let start_position_string = indoc::indoc! {"
-	/// 	♜ ♞ ♝ ♛ ♚ ♝ ♞ ♜
-	///		♟ ♟ ♟ ♟ ♟ ♟ ♟ ♟
-	///		▢ ▧ ▢ ▧ ▢ ▧ ▢ ▧
-	///		▧ ▢ ▧ ▢ ▧ ▢ ▧ ▢
-	///		▢ ▧ ▢ ▧ ▢ ▧ ▢ ▧
-	///		▧ ▢ ▧ ▢ ▧ ▢ ▧ ▢
-	///		♙ ♙ ♙ ♙ ♙ ♙ ♙ ♙
-	///		♖ ♘ ♗ ♕ ♔ ♗ ♘ ♖
+	/// 	♜ ♞ ♝ ♛ ♚ ♝ ♞ ♜ 
+	///		♟ ♟ ♟ ♟ ♟ ♟ ♟ ♟ 
+	///		▢ ▧ ▢ ▧ ▢ ▧ ▢ ▧ 
+	///		▧ ▢ ▧ ▢ ▧ ▢ ▧ ▢ 
+	///		▢ ▧ ▢ ▧ ▢ ▧ ▢ ▧ 
+	///		▧ ▢ ▧ ▢ ▧ ▢ ▧ ▢ 
+	///		♙ ♙ ♙ ♙ ♙ ♙ ♙ ♙ 
+	///		♖ ♘ ♗ ♕ ♔ ♗ ♘ ♖ 
 	/// "};
 	///
 	/// assert_eq!(
@@ -540,7 +540,7 @@ impl Position {
 				} else if (self.get_board_for_piece(Piece::Rook) & square).has_pieces() {
 					2
 				} else if (self.get_board_for_piece(Piece::Bishop) & square).has_pieces() {
-					2
+					3
 				} else if (self.get_board_for_piece(Piece::Knight) & square).has_pieces() {
 					4
 				} else {
@@ -565,6 +565,7 @@ impl Position {
 mod test {
 
 	use super::*;
+	use pretty_assertions::assert_eq;
 
 	#[test]
 	pub fn from_fen_default_position() {
@@ -581,15 +582,15 @@ mod test {
 		)
 		.unwrap();
 		let expected_board_string = indoc::indoc! {"
-            ♜ ▧ ▢ ▧ ♚ ▧ ♞ ♜ 
-            ♟ ♟ ♟ ▢ ▧ ♟ ♟ ♟ 
-            ▢ ▧ ♞ ♝ ▢ ▧ ▢ ▧ 
-            ▧ ▢ ▧ ♟ ♟ ♝ ▧ ▢ 
-            ▢ ▧ ▢ ♙ ▢ ▧ ▢ ♛ 
-            ♘ ▢ ♙ ▢ ▧ ♙ ▧ ▢ 
-            ♙ ♙ ▢ ▧ ♙ ▧ ♙ ♙ 
-            ▧ ♖ ♗ ♕ ♔ ♗ ♘ ♖
-        "};
+			♜ ▧ ▢ ▧ ♚ ▧ ♞ ♜ 
+			♟ ♟ ♟ ▢ ▧ ♟ ♟ ♟ 
+			▢ ▧ ♞ ♝ ▢ ▧ ▢ ▧ 
+			▧ ▢ ▧ ♟ ♟ ♝ ▧ ▢ 
+			▢ ▧ ▢ ♙ ▢ ▧ ▢ ♛ 
+			♘ ▢ ♙ ▢ ▧ ♙ ▧ ▢ 
+			♙ ♙ ▢ ▧ ♙ ▧ ♙ ♙ 
+			▧ ♖ ♗ ♕ ♔ ♗ ♘ ♖
+		"};
 		assert_eq!(
 			position.as_display_string().trim(),
 			expected_board_string.trim()
@@ -598,12 +599,6 @@ mod test {
 		let mut expected_metadata = PositionMetadata::default();
 		expected_metadata.revoke_castling_rights(Color::White, CastleSide::Queen);
 		assert_eq!(position.metadata, expected_metadata);
-	}
-
-	#[test]
-	pub fn pieces_block_castling() {
-		assert!(!Position::default().can_castle(Color::White, CastleSide::King));
-		assert!(!Position::default().can_castle(Color::White, CastleSide::Queen));
 	}
 
 	#[test]

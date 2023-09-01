@@ -15,10 +15,7 @@ pub enum UciCommand {
 	},
 	Register,
 	NewGame,
-	Position {
-		start_position: Position,
-		moves: Option<Rc<[Move]>>,
-	},
+	Position(Position),
 	Go {
 		search_moves: Option<Rc<[Move]>>,
 		wtime: Option<u32>,
@@ -81,7 +78,7 @@ fn parse_position(
 	mut cmd: SplitAsciiWhitespace<'_>,
 ) -> Result<UciCommand, &'static str> {
 	let mut position = None;
-	let mut moves = None;
+	let mut moves: Vec<&str> = Vec::new();
 
 	while let Some(word) = cmd.next() {
 		match word {
@@ -108,18 +105,23 @@ fn parse_position(
 			}
 			"startpos" => position = Some(Position::default()),
 			"moves" => {
-				let parsed_moves = cmd
+				moves = cmd
 					.take_while_ref(|&w| w != "fen" && w != "startpos")
-					.map(Move::from)
 					.collect();
-				moves = Some(parsed_moves)
 			}
 			_ => {}
 		}
 	}
 
-	return Ok(UciCommand::Position {
-		start_position: position.ok_or("No position in FEN")?,
-		moves: moves,
-	});
+	if let Some(starting_position) = position {
+		let mut after_moves_position = starting_position;
+		for m in moves {
+			let to_apply = Move::from_uci_str(m, &after_moves_position);
+			after_moves_position = after_moves_position.apply_move(&to_apply);
+		}
+
+		return Ok(UciCommand::Position(after_moves_position));
+	}
+
+	return Err("No position specified in command");
 }

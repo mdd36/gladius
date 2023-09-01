@@ -94,13 +94,9 @@ pub fn uci_loop() {
 				println!("id author Matthew Dickson");
 				println!("uciok");
 			}
-			UciCommand::Position {
-				start_position,
-				moves,
-			} => {
+			UciCommand::Position(start_position) => {
 				println!("{}", start_position.as_display_string());
 				println!("{:?}", &start_position.metadata);
-				println!("{moves:?}");
 			}
 			UciCommand::Register => println!("registration ok"),
 			UciCommand::Help => println!("{HELP_DIALOG}"),

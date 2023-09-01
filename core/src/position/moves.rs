@@ -155,6 +155,88 @@ pub struct Move {
 	pub target: Square,
 }
 
+impl Move {
+	pub fn from_uci_str(move_str: &str, position: &Position) -> Move {
+		let metadata = position.metadata;
+		let color_to_move = metadata.to_move();
+		let start = Square::from_algebraic_notion(&move_str[0..2]);
+		let target = Square::from_algebraic_notion(&move_str[2..4]);
+	
+		let mut flags = MoveFlags::default();
+	
+		let capture = position.get_board_for_color(!color_to_move).is_occupied(target);
+		if capture {
+			flags = MoveFlags::capture(); 
+		}
+	
+		match move_str.get(5..5) {
+			Some("q") | Some ("Q") => {
+				if capture { 
+					flags = MoveFlags::queen_promotion_capture(); 
+				} else {
+					flags = MoveFlags::queen_promotion();
+				}
+			}
+			Some("n") | Some("N") => {
+				if capture { 
+					flags = MoveFlags::knight_promotion_capture();
+				} else {
+					flags = MoveFlags::knight_promotion();
+				}
+			}
+			Some("b") | Some ("B") => {
+				if capture { 
+					flags = MoveFlags::bishop_promotion_capture();
+				} else {
+					flags = MoveFlags::bishop_promotion();
+				}
+			}
+			Some("r") | Some ("R") => {
+				if capture { 
+					flags = MoveFlags::rook_promotion_capture(); 
+				} else {
+					flags = MoveFlags::rook_promotion();
+				}
+			}
+			_ => {}
+		}
+		
+		let piece = position.piece_on(start).unwrap();
+	
+		if piece == Piece::Pawn {
+			let is_en_passant = match metadata.en_passant_square() {
+				Some(en_passant_square) => en_passant_square == target,
+				None => false,
+			};
+	
+			if is_en_passant {
+				flags = MoveFlags::en_passant();
+			}
+	
+			if start.rank().abs_diff(target.rank()) == 2 {
+				flags = MoveFlags::double_pawn_push();
+			}
+		}
+	
+		let starting_king_square = KING_START[color_to_move as usize];
+		if piece == Piece::King && start == starting_king_square {
+			let king_side_castle_square = KING_CASTLE_SQUARE[color_to_move as usize];
+			let queen_side_castle_square = KING_CASTLE_SQUARE[color_to_move as usize];
+			if target == king_side_castle_square {
+				flags = MoveFlags::king_castling();
+			} else if target == queen_side_castle_square {
+				flags = MoveFlags::queen_castling();
+			}
+		}
+	
+		Move {
+			flags,
+			start,
+			target,
+		}
+	}
+}
+
 impl std::fmt::Display for Move {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(piece) = self.flags.promotion_piece() {
@@ -170,86 +252,6 @@ impl std::fmt::Display for Move {
 					write!(f, "{}{}", self.start.as_algebraic_notation(), self.target.as_algebraic_notation())
 				}
     }
-}
-
-pub fn parse_move(move_str: &str, position: &Position) -> Move {
-	let metadata = position.metadata;
-	let color_to_move = metadata.to_move();
-	let start = Square::from_algebraic_notion(&move_str[0..2]);
-	let target = Square::from_algebraic_notion(&move_str[2..4]);
-
-	let mut flags = MoveFlags::default();
-
-	let capture = position.get_board_for_color(!color_to_move).is_occupied(target);
-	if capture {
-		flags = MoveFlags::capture(); 
-	}
-
-	match move_str.get(5..5) {
-		Some("q") | Some ("Q") => {
-			if capture { 
-				flags = MoveFlags::queen_promotion_capture(); 
-			} else {
-				flags = MoveFlags::queen_promotion();
-			}
-		}
-		Some("n") | Some("N") => {
-			if capture { 
-				flags = MoveFlags::knight_promotion_capture();
-			} else {
-				flags = MoveFlags::knight_promotion();
-			}
-		}
-		Some("b") | Some ("B") => {
-			if capture { 
-				flags = MoveFlags::bishop_promotion_capture();
-			} else {
-				flags = MoveFlags::bishop_promotion();
-			}
-		}
-		Some("r") | Some ("R") => {
-			if capture { 
-				flags = MoveFlags::rook_promotion_capture(); 
-			} else {
-				flags = MoveFlags::rook_promotion();
-			}
-		}
-		_ => {}
-	}
-	
-	let piece = position.piece_on(start).unwrap();
-
-	if piece == Piece::Pawn {
-		let is_en_passant = match metadata.en_passant_square() {
-			Some(en_passant_square) => en_passant_square == target,
-			None => false,
-		};
-
-		if is_en_passant {
-			flags = MoveFlags::en_passant();
-		}
-
-		if start.rank().abs_diff(target.rank()) == 2 {
-			flags = MoveFlags::double_pawn_push();
-		}
-	}
-
-	let starting_king_square = KING_START[color_to_move as usize];
-	if piece == Piece::King && start == starting_king_square {
-		let king_side_castle_square = KING_CASTLE_SQUARE[color_to_move as usize];
-		let queen_side_castle_square = KING_CASTLE_SQUARE[color_to_move as usize];
-		if target == king_side_castle_square {
-			flags = MoveFlags::king_castling();
-		} else if target == queen_side_castle_square {
-			flags = MoveFlags::queen_castling();
-		}
-	}
-
-	Move {
-		flags,
-		start,
-		target,
-	}
 }
 
 pub fn generate_moves(position: &Position) -> Vec<Move> {

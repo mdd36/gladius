@@ -118,7 +118,7 @@ impl Square {
 	/// ### Examples:
 	///
 	/// ```
-	/// use gladius_core::position::Square;
+	/// use gladius_core::position::board::Square;
 	///
 	/// assert_eq!(1, Square::from_algebraic_notion("a1").as_u64());
 	/// assert_eq!(268435456, Square::from_algebraic_notion("e4").as_u64());
@@ -142,7 +142,7 @@ impl Square {
 	/// ### Examples:
 	///
 	/// ```
-	/// use gladius_core::position::Square;
+	/// use gladius_core::position::board::Square;
 	///
 	/// assert_eq!("a1", Square::from_rank_and_file(0, 0).as_algebraic_notation());
 	/// assert_eq!("h8", Square::from_rank_and_file(7, 7).as_algebraic_notation());
@@ -173,7 +173,7 @@ impl Square {
 	///
 	/// ### Example
 	/// ```
-	/// use gladius_core::position::Square;
+	/// use gladius_core::position::board::Square;
 	///
 	/// assert_eq!("a1", Square::from(1).as_algebraic_notation());
 	/// assert_eq!("h8", Square::from(0x8000000000000000).as_algebraic_notation());
