@@ -1,4 +1,7 @@
-use super::{board::{Board, Square}, Piece, magics, Color, Position};
+use super::{
+	board::{Board, Square},
+	magics, Color, Piece, Position,
+};
 
 pub const KNIGHT_ATTACKS: [u64; 64] = generate_attacks::<8>(KNIGHT_MOVES);
 pub const KING_ATTACKS: [u64; 64] = generate_attacks::<8>(KING_MOVES);
@@ -49,7 +52,7 @@ const PAWN_MOVES: [[i8; 2]; 2] = [
 	[
 		Direction::South as i8 + Direction::East as i8,
 		Direction::South as i8 + Direction::West as i8,
-	]
+	],
 ];
 
 const fn generate_attacks<const N: usize>(move_board: [i8; N]) -> [u64; 64] {
@@ -75,9 +78,7 @@ const fn generate_attacks<const N: usize>(move_board: [i8; N]) -> [u64; 64] {
 
 pub fn get_attacks(position: Board, square: Square, piece: Piece, color: Color) -> Board {
 	match piece {
-		Piece::Pawn => {
-			Board::from(PAWN_ATTACKS[color as usize][square.lsb_index()])
-		}
+		Piece::Pawn => Board::from(PAWN_ATTACKS[color as usize][square.lsb_index()]),
 		Piece::Knight => Board::from(KNIGHT_ATTACKS[square.lsb_index()]),
 		Piece::King => Board::from(KING_ATTACKS[square.lsb_index()]),
 		Piece::Rook => {
@@ -112,7 +113,8 @@ pub fn get_attacks(position: Board, square: Square, piece: Piece, color: Color) 
 			let bishop_mask = magics::BISHOP_MASKS[square];
 			let bishop_blockers = (position & bishop_mask).as_usize();
 			let bishop_magic_index = (bishop_blockers.wrapping_mul(bishop_magic)) >> bishop_shift;
-			let bishop_board = Board::from(magics::BISHOP_BOARDS[square][bishop_magic_index as usize]);
+			let bishop_board =
+				Board::from(magics::BISHOP_BOARDS[square][bishop_magic_index as usize]);
 
 			bishop_board | rook_board
 		}
@@ -142,12 +144,13 @@ pub fn attackers_of_square(square: Square, attacker_color: Color, position: &Pos
 	attackers_board |= knight_board & attacker_occupancy & KNIGHT_ATTACKS[square_index];
 
 	let bishop_queen_board = attacker_occupancy
-	 & (position.get_board_for_piece(Piece::Bishop) | position.get_board_for_piece(Piece::Queen));
+		& (position.get_board_for_piece(Piece::Bishop)
+			| position.get_board_for_piece(Piece::Queen));
 	let diagonal_attacks = get_attacks(total_occupancy, square, Piece::Bishop, attacker_color);
 	attackers_board |= diagonal_attacks & bishop_queen_board;
 
 	let rook_queen_board = attacker_occupancy
-	 & (position.get_board_for_piece(Piece::Rook) | position.get_board_for_piece(Piece::Queen));
+		& (position.get_board_for_piece(Piece::Rook) | position.get_board_for_piece(Piece::Queen));
 	let rank_file_attacks = get_attacks(total_occupancy, square, Piece::Rook, attacker_color);
 	attackers_board |= rank_file_attacks & rook_queen_board;
 

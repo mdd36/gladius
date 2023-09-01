@@ -1,8 +1,8 @@
 #[rustfmt::skip]
 pub mod magics;
+pub mod attacks;
 pub mod board;
 pub mod moves;
-pub mod attacks;
 
 use std::ops::BitOrAssign;
 
@@ -24,14 +24,14 @@ pub enum Color {
 }
 
 impl std::ops::Not for Color {
-    type Output = Color;
+	type Output = Color;
 
-    fn not(self) -> Self::Output {
-			match self {
-				Self::White => Self::Black,
-				Self::Black => Self::White,
-			}
-    }
+	fn not(self) -> Self::Output {
+		match self {
+			Self::White => Self::Black,
+			Self::Black => Self::White,
+		}
+	}
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -340,7 +340,7 @@ impl Position {
 				'q' => position.metadata |= 0x0100,
 				'K' => position.metadata |= 0x0080,
 				'Q' => position.metadata |= 0x0040,
-				_ => {},
+				_ => {}
 			}
 		}
 
@@ -355,7 +355,8 @@ impl Position {
 		}
 
 		// Half move clock
-		let moves: u16 = fen_components.next()
+		let moves: u16 = fen_components
+			.next()
 			.map(|clock| clock.parse().ok())
 			.flatten()
 			.unwrap_or(0);
@@ -373,8 +374,7 @@ impl Position {
 	}
 
 	pub fn get_occupancy_board(&self) -> Board {
-		self.get_board_for_color(Color::White)
-			| self.get_board_for_color(Color::Black)
+		self.get_board_for_color(Color::White) | self.get_board_for_color(Color::Black)
 	}
 
 	/// Check if a given color can castle on a side. This check only
@@ -452,12 +452,10 @@ impl Position {
 			let en_passant_file = next_move.start.file();
 			let en_passant_rank = next_move.start.rank() as i8 + MOVE_DIRECTION[color_to_move];
 
-			metadata.set_en_passant_square(
-				Square::from_rank_and_file(
-					en_passant_rank as u8,
-					en_passant_file,
-				)
-			);
+			metadata.set_en_passant_square(Square::from_rank_and_file(
+				en_passant_rank as u8,
+				en_passant_file,
+			));
 		} else {
 			metadata.clear_en_passant();
 		}
@@ -469,7 +467,7 @@ impl Position {
 		if ((next_move.start | next_move.target) & CASTLE_RIGHTS_SQUARES).has_pieces() {
 			for side in [CastleSide::Queen, CastleSide::King] {
 				for color in [Color::White, Color::Black] {
-					let rook_square  = ROOKS[side as usize][color as usize];
+					let rook_square = ROOKS[side as usize][color as usize];
 					if (next_move.target | next_move.start).is_occupied(rook_square) {
 						metadata.revoke_castling_rights(color, side);
 					}
@@ -495,14 +493,14 @@ impl Position {
 	/// use gladius_core::position::Position;
 	///
 	/// let start_position_string = indoc::indoc! {"
-	/// 	♜ ♞ ♝ ♛ ♚ ♝ ♞ ♜ 
-	///		♟ ♟ ♟ ♟ ♟ ♟ ♟ ♟ 
-	///		▢ ▧ ▢ ▧ ▢ ▧ ▢ ▧ 
-	///		▧ ▢ ▧ ▢ ▧ ▢ ▧ ▢ 
-	///		▢ ▧ ▢ ▧ ▢ ▧ ▢ ▧ 
-	///		▧ ▢ ▧ ▢ ▧ ▢ ▧ ▢ 
-	///		♙ ♙ ♙ ♙ ♙ ♙ ♙ ♙ 
-	///		♖ ♘ ♗ ♕ ♔ ♗ ♘ ♖ 
+	/// 	♜ ♞ ♝ ♛ ♚ ♝ ♞ ♜
+	///		♟ ♟ ♟ ♟ ♟ ♟ ♟ ♟
+	///		▢ ▧ ▢ ▧ ▢ ▧ ▢ ▧
+	///		▧ ▢ ▧ ▢ ▧ ▢ ▧ ▢
+	///		▢ ▧ ▢ ▧ ▢ ▧ ▢ ▧
+	///		▧ ▢ ▧ ▢ ▧ ▢ ▧ ▢
+	///		♙ ♙ ♙ ♙ ♙ ♙ ♙ ♙
+	///		♖ ♘ ♗ ♕ ♔ ♗ ♘ ♖
 	/// "};
 	///
 	/// assert_eq!(
@@ -563,6 +561,7 @@ impl Position {
 				board_string.push(chess_piece_unicode);
 				board_string.push(' ');
 			}
+			board_string.remove(board_string.len() - 1); // Trim final space
 			board_string.push('\n');
 		}
 
@@ -591,13 +590,13 @@ mod test {
 		)
 		.unwrap();
 		let expected_board_string = indoc::indoc! {"
-			♜ ▧ ▢ ▧ ♚ ▧ ♞ ♜ 
-			♟ ♟ ♟ ▢ ▧ ♟ ♟ ♟ 
-			▢ ▧ ♞ ♝ ▢ ▧ ▢ ▧ 
-			▧ ▢ ▧ ♟ ♟ ♝ ▧ ▢ 
-			▢ ▧ ▢ ♙ ▢ ▧ ▢ ♛ 
-			♘ ▢ ♙ ▢ ▧ ♙ ▧ ▢ 
-			♙ ♙ ▢ ▧ ♙ ▧ ♙ ♙ 
+			♜ ▧ ▢ ▧ ♚ ▧ ♞ ♜
+			♟ ♟ ♟ ▢ ▧ ♟ ♟ ♟
+			▢ ▧ ♞ ♝ ▢ ▧ ▢ ▧
+			▧ ▢ ▧ ♟ ♟ ♝ ▧ ▢
+			▢ ▧ ▢ ♙ ▢ ▧ ▢ ♛
+			♘ ▢ ♙ ▢ ▧ ♙ ▧ ▢
+			♙ ♙ ▢ ▧ ♙ ▧ ♙ ♙
 			▧ ♖ ♗ ♕ ♔ ♗ ♘ ♖
 		"};
 		assert_eq!(

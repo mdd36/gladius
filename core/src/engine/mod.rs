@@ -1,4 +1,4 @@
-use crate::position::{moves::Move, Position};
+use crate::position::Position;
 
 pub trait Engine {
 	fn setup_pos(&mut self, position: Position);

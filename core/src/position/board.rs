@@ -1,6 +1,8 @@
-use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXorAssign, ShlAssign, Mul, BitXor, Not, Shl, Shr};
+use std::ops::{
+	BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Mul, Not, Shl, ShlAssign, Shr,
+};
 
-use crate::position::{Piece, attacks, Color};
+use crate::position::{attacks, Color, Piece};
 
 pub const CASTLE_RIGHTS_SQUARES: Board = Board(0x8100000000000081);
 /// Indexed as ROOKS[[`super::CastleSide`]][[`Color`]]
@@ -10,8 +12,10 @@ pub const ROOKS: [[Square; 2]; 2] = [
 ];
 pub const KING_START: [Square; 2] = [Square(0x0000000000000010), Square(0x1000000000000000)];
 
-pub const KING_CASTLE_SQUARE: [Square; 2] = [Square(0x0000000000000040), Square(0x4000000000000000)];
-pub const QUEEN_CASTLE_SQUARE: [Square; 2] = [Square(0x0000000000000004), Square(0x0400000000000000)];
+pub const KING_CASTLE_SQUARE: [Square; 2] =
+	[Square(0x0000000000000040), Square(0x4000000000000000)];
+pub const QUEEN_CASTLE_SQUARE: [Square; 2] =
+	[Square(0x0000000000000004), Square(0x0400000000000000)];
 /// Indexed as ROOKS[[`super::CastleSide`]][[`Color`]]
 pub const ROOK_CASTLE_MOVE: [[Board; 2]; 2] = [
 	[Board(0x0000000000000009), Board(0x0900000000000000)],
@@ -120,11 +124,11 @@ impl Square {
 	/// ```
 	/// use gladius_core::position::board::Square;
 	///
-	/// assert_eq!(1, Square::from_algebraic_notion("a1").as_u64());
-	/// assert_eq!(268435456, Square::from_algebraic_notion("e4").as_u64());
-	/// assert_eq!(0x8000000000000000, Square::from_algebraic_notion("h8").as_u64());
+	/// assert_eq!(1, Square::from_algebraic_notation("a1").as_u64());
+	/// assert_eq!(268435456, Square::from_algebraic_notation("e4").as_u64());
+	/// assert_eq!(0x8000000000000000, Square::from_algebraic_notation("h8").as_u64());
 	/// ```
-	pub fn from_algebraic_notion(position: &str) -> Self {
+	pub fn from_algebraic_notation(position: &str) -> Self {
 		// Will be ASCII so we can just read them as bytes
 		let file = position.as_bytes()[0] - ('a' as u8);
 		let rank = position.as_bytes()[1] - ('1' as u8);
@@ -177,7 +181,7 @@ impl Square {
 	///
 	/// assert_eq!("a1", Square::from(1).as_algebraic_notation());
 	/// assert_eq!("h8", Square::from(0x8000000000000000).as_algebraic_notation());
-	/// assert_eq!("e4", Square::from_algebraic_notion("e4").as_algebraic_notation());
+	/// assert_eq!("e4", Square::from_algebraic_notation("e4").as_algebraic_notation());
 	/// ```
 	pub fn as_algebraic_notation(&self) -> String {
 		let file = self.file();
@@ -239,9 +243,9 @@ impl std::ops::Deref for Board {
 }
 
 impl From<Square> for Board {
-    fn from(value: Square) -> Self {
-        Self(value.as_u64())
-    }
+	fn from(value: Square) -> Self {
+		Self(value.as_u64())
+	}
 }
 
 impl From<u64> for Board {
@@ -251,33 +255,33 @@ impl From<u64> for Board {
 }
 
 impl Iterator for Board {
-    type Item = Square;
+	type Item = Square;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.0 == 0 {
-					None
-				} else {
-					let lsb_index = self.0.trailing_zeros();
-					*self = Self(self.0 & self.0 - 1);
-					Some(Square::from_lsb_index(lsb_index))
-				}
-    }
+	fn next(&mut self) -> Option<Self::Item> {
+		if self.0 == 0 {
+			None
+		} else {
+			let lsb_index = self.0.trailing_zeros();
+			*self = Self(self.0 & self.0 - 1);
+			Some(Square::from_lsb_index(lsb_index))
+		}
+	}
 }
 
 impl Mul<usize> for Board {
-    type Output = usize;
+	type Output = usize;
 
-    fn mul(self, rhs: usize) -> Self::Output {
-			 rhs * self.0 as usize
-    }
+	fn mul(self, rhs: usize) -> Self::Output {
+		rhs * self.0 as usize
+	}
 }
 
 impl Not for Board {
-    type Output = Self;
+	type Output = Self;
 
-    fn not(self) -> Self::Output {
-			Self(!self.0)
-    }
+	fn not(self) -> Self::Output {
+		Self(!self.0)
+	}
 }
 
 impl BitAndAssign for Board {
@@ -305,11 +309,11 @@ impl BitOrAssign<u64> for Board {
 }
 
 impl BitAnd for Board {
-    type Output = Self;
+	type Output = Self;
 
-    fn bitand(self, rhs: Self) -> Self::Output {
-			Self(self.0 & rhs.0)
-		}
+	fn bitand(self, rhs: Self) -> Self::Output {
+		Self(self.0 & rhs.0)
+	}
 }
 
 impl BitAnd<u64> for Board {
@@ -345,25 +349,25 @@ impl BitOr<Square> for Board {
 }
 
 impl BitXor for Board {
-    type Output = Self;
+	type Output = Self;
 
-    fn bitxor(self, rhs: Self) -> Self::Output {
-			Self(self.0 ^ rhs.0)
-    }
+	fn bitxor(self, rhs: Self) -> Self::Output {
+		Self(self.0 ^ rhs.0)
+	}
 }
 
 impl BitXor<Square> for Board {
-    type Output = Self;
+	type Output = Self;
 
-    fn bitxor(self, rhs: Square) -> Self::Output {
-			Self(self.0 ^ rhs.0)
-    }
+	fn bitxor(self, rhs: Square) -> Self::Output {
+		Self(self.0 ^ rhs.0)
+	}
 }
 
 impl BitXorAssign for Board {
-    fn bitxor_assign(&mut self, rhs: Self) {
-        *self = Self(self.0 ^ rhs.0)
-    }
+	fn bitxor_assign(&mut self, rhs: Self) {
+		*self = Self(self.0 ^ rhs.0)
+	}
 }
 
 impl BitXorAssign<Square> for Board {
@@ -468,7 +472,7 @@ pub fn between(start: Square, target: Square) -> Board {
 
 /// Get a bitboard to represent all the squares across an entire rank,
 /// column, or diagonal that contains both `a` and `b`. If no such
-/// rank, file, or diagonal exists, the board will be empty. 
+/// rank, file, or diagonal exists, the board will be empty.
 pub fn ray(a: Square, b: Square) -> Board {
 	RAY_THROUGH[a.lsb_index()][b.lsb_index()]
 }
@@ -480,12 +484,17 @@ fn create_between() -> [[Board; 64]; 64] {
 		for piece in [Piece::Rook, Piece::Bishop] {
 			for target in 0..64 {
 				let target_square = Square::from_lsb_index(target);
-				let attacks_from_start = 
+				let attacks_from_start =
 					attacks::get_attacks(target_square.into(), start_square, piece, Color::White);
 				if attacks_from_start.is_occupied(target_square) {
-					let attacks_from_target = 
-						attacks::get_attacks(start_square.into(), target_square, piece, Color::White);
-					between[start as usize][target as usize] = attacks_from_start & attacks_from_target | target_square;
+					let attacks_from_target = attacks::get_attacks(
+						start_square.into(),
+						target_square,
+						piece,
+						Color::White,
+					);
+					between[start as usize][target as usize] =
+						attacks_from_start & attacks_from_target | target_square;
 				}
 			}
 		}
@@ -498,12 +507,19 @@ fn create_rays() -> [[Board; 64]; 64] {
 	for start in 0..64 {
 		let start_square = Square::from_lsb_index(start);
 		for piece in [Piece::Rook, Piece::Bishop] {
-			let attacks_from_start = attacks::get_attacks(start_square.into(), start_square, piece, Color::White);
+			let attacks_from_start =
+				attacks::get_attacks(start_square.into(), start_square, piece, Color::White);
 			for target in 0..64 {
 				let target_square = Square::from_lsb_index(target);
 				if attacks_from_start.is_occupied(target_square) {
-					let attacks_from_target = attacks::get_attacks(target_square.into(), target_square, piece, Color::White);
-					rays[start as usize][target as usize] = (attacks_from_start & attacks_from_target) | target_square | start_square;
+					let attacks_from_target = attacks::get_attacks(
+						target_square.into(),
+						target_square,
+						piece,
+						Color::White,
+					);
+					rays[start as usize][target as usize] =
+						(attacks_from_start & attacks_from_target) | target_square | start_square;
 				}
 			}
 		}
