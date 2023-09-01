@@ -673,6 +673,7 @@ fn pins(position: &Position) -> Board {
 /// a given depth, grouped by the move at the first depth.
 pub fn divide(initial: Position, depth: u8) -> MoveDivision {
 	let mut divided_moves = Vec::new();
+	let tic = std::time::Instant::now();
 	let moves = generate_moves(&initial);
 
 	for m in moves {
@@ -695,18 +696,25 @@ pub fn divide(initial: Position, depth: u8) -> MoveDivision {
 		}
 		divided_moves.push((m.to_string(), total_positions));
 	}
+	let toc = tic.elapsed();
 
-	MoveDivision(divided_moves)
+	MoveDivision {
+		elapsed: toc,
+		moves: divided_moves
+	}
 }
 
 /// Small newtype to encapsulate display logic for [`divide`] output.
-pub struct MoveDivision(Vec<(String, usize)>);
+pub struct MoveDivision {
+	moves: Vec<(String, usize)>,
+	elapsed: std::time::Duration,
+}
 
 impl std::ops::Deref for MoveDivision {
 	type Target = Vec<(String, usize)>;
 
 	fn deref(&self) -> &Self::Target {
-		&self.0
+		&self.moves
 	}
 }
 
@@ -715,11 +723,13 @@ impl std::fmt::Display for MoveDivision {
 		for (move_string, node_count) in self.iter() {
 			write!(f, "{move_string}: {node_count}\n")?;
 		}
-		write!(f, "Moves: {}", self.len())?;
-		write!(
-			f,
-			"Nodes: {}",
-			self.iter().map(|tup| tup.1.to_owned()).sum::<usize>()
+		let total_nodes = self.iter().map(|tup| tup.1.to_owned()).sum::<usize>();
+		write!(f,
+			"Moves: {}\nNodes: {}\nElapsed: {}ms ({:.3} nodes/sec)",
+			self.moves.len(),
+			total_nodes,
+			self.elapsed.as_millis(),
+			((total_nodes as f64) / (self.elapsed.as_millis() as f64)) * 1000f64
 		)
 	}
 }

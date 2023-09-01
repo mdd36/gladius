@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use std::{rc::Rc, str::SplitAsciiWhitespace};
 
-use gladius_core::position::{moves::Move, Position};
+use gladius_core::{position::{moves::Move, Position}, engine::SearchParameters};
 
 // For the official spec, see
 // https://gist.github.com/DOBRO/2592c6dad754ba67e6dcaec8c90165bf#file-uci-protocol-specification-txt-L41
@@ -9,6 +9,8 @@ pub enum UciCommand {
 	UCI,
 	Debug(bool),
 	IsReady,
+	Display,
+	Peft(u8),
 	SetOption {
 		name: String,
 		value: Option<String>,
@@ -16,17 +18,7 @@ pub enum UciCommand {
 	Register,
 	NewGame,
 	Position(Position),
-	Go {
-		search_moves: Option<Rc<[Move]>>,
-		wtime: Option<u32>,
-		btime: Option<u32>,
-		winc: Option<u32>,
-		binc: Option<u32>,
-		depth: Option<u8>,
-		nodes: Option<u32>,
-		move_time: Option<u32>,
-		infinite: Option<bool>,
-	},
+	Go(SearchParameters),
 	Stop,
 	Quit,
 	Help,
@@ -35,6 +27,8 @@ pub enum UciCommand {
 impl std::fmt::Debug for UciCommand {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
+			Self::Display => write!(f, "Display"),
+			Self::Peft(_) => write!(f, "Perft"),
 			Self::UCI => write!(f, "UCI"),
 			Self::Debug(_) => write!(f, "Debug"),
 			Self::IsReady => write!(f, "IsReady"),
@@ -66,6 +60,13 @@ pub fn parse_input(input: String) -> Result<UciCommand, &'static str> {
 			"position" => return parse_position(&input, split),
 			"register" => return Ok(UciCommand::Register),
 			"help" => return Ok(UciCommand::Help),
+			"d" | "display" => return Ok(UciCommand::Display),
+			"perft" => {
+				let depth = split.next().ok_or("Expected a depth for perft")?;
+				let depth = depth.parse().map_err(|_| "Couldn't parse desired depth")?;
+				return Ok(UciCommand::Peft(depth));
+			}
+			"go" => return parse_go(split),
 			_ => continue,
 		}
 	}
@@ -124,4 +125,10 @@ fn parse_position(
 	}
 
 	return Err("No position specified in command");
+}
+
+fn parse_go(
+	cmd: SplitAsciiWhitespace<'_>
+) -> Result<UciCommand, &'static str> {
+	todo!()
 }

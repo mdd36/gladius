@@ -1,7 +1,10 @@
 mod parser;
 
+use std::sync::mpsc::{Receiver, channel, TryRecvError};
+
+use gladius_core::{engine::{GladiusEngine, Engine, EngineMessage}, position::Position};
 use parser::{parse_input, UciCommand};
-use rustyline::error::ReadlineError;
+use rustyline::{error::ReadlineError, Config, DefaultEditor};
 
 const CLI_BANNER: &str = r#"
  _____ _           _ _           
@@ -34,8 +37,7 @@ setoption name <id> [value <x>]
     Change an internal parameter in the engine. If the value is simply a flag,
     the value can be omitted and the engine will toggle the current state.
 register [ later | name <x> code <y> ]
-    Since this engine doesn't require registration, this is a noop. The command
-    is supported to align with the entire UCI interface.
+    Since this engine doesn't require registration, this is a noop.
 ucinewgame
     Tell the engine to start a new game.
 position [ fen <fenstring> | startpos ] moves <move 1> ... <move n>
@@ -44,6 +46,10 @@ position [ fen <fenstring> | startpos ] moves <move 1> ... <move n>
     chess start using "startpos". The moves are optional, and are formed in
     algebraic notation for the start square and the end square. For example,
     the move of a pawn from e2 to e4 is represented as "e2e4".
+display
+		Show the current position represented as a chess board.
+perft [ depth <x> ]
+		Run a perft test on the current position to the specified depth.
 go [ wtime <x> ] [ btime <x> ] [ winc <x> ] [ binc <x> ] 
       [ depth <x> | nodes <x> | movetime <x> | infinite ]
     Start calculating what the best next move is. wtime specifies the number
@@ -68,18 +74,28 @@ fn main() {
 	uci_loop()
 }
 
-pub fn uci_loop() {
-	let mut line_reader =
-		rustyline::DefaultEditor::new().expect("Failed to initialize command interface.");
+fn uci_loop() {
+	let stdin_rx = stdin_channel();
+	let (engine_tx, engine_rx) = channel();
+	let mut engine = GladiusEngine::new(engine_tx);
+	
 	loop {
-		let line = match line_reader.readline("> ") {
-			Ok(line) => {
-				line_reader.add_history_entry(&line).unwrap();
-				line
-			}
-			Err(ReadlineError::Interrupted | ReadlineError::Eof) => return,
-			Err(_) => continue,
+		match engine_rx.try_recv() {
+			Ok(EngineMessage::ReadyOk) => println!("readyok"),
+			Ok(EngineMessage::Perft(move_division)) => println!("{}", move_division),
+			Ok(EngineMessage::BestMove(bm)) => println!("{}", bm),
+			_ => {}
 		};
+
+		let line = match stdin_rx.try_recv() {
+			Ok(line) => line,
+			Err(TryRecvError::Empty) => {
+				std::thread::sleep(std::time::Duration::from_millis(200));
+				continue;
+			}
+			Err(_) => return, // EOF sent to stdin
+		};
+
 		let result = match parse_input(line) {
 			Ok(cmd) => cmd,
 			Err(str) => {
@@ -94,14 +110,57 @@ pub fn uci_loop() {
 				println!("id author Matthew Dickson");
 				println!("uciok");
 			}
+			UciCommand::NewGame => {
+				engine.stop();
+				engine.setup_pos(Position::default());
+			},
 			UciCommand::Position(start_position) => {
-				println!("{}", start_position.as_display_string());
-				println!("{:?}", &start_position.metadata);
+				engine.stop();
+				engine.setup_pos(start_position);
+			}
+			UciCommand::Display => {
+				println!("{}", engine.display());
+			}
+			UciCommand::Peft(depth) => engine.perft(depth),
+			UciCommand::Debug(debug) => {
+				engine.set_debug(debug);
+			}
+			UciCommand::IsReady => {
+				engine.ready();
+			}
+			UciCommand::SetOption { name, value } => {
+				// TODO
+			}
+			UciCommand::Go(parameters) => {
+				engine.go(parameters);
+			}
+			UciCommand::Stop => {
+				engine.stop();
 			}
 			UciCommand::Register => println!("registration ok"),
 			UciCommand::Help => println!("{HELP_DIALOG}"),
 			UciCommand::Quit => return,
-			cmd => println!("{cmd:?}"),
 		}
 	}
+}
+
+fn stdin_channel() -> Receiver<String> {
+	let (tx, rx) = channel();
+	let config = Config::builder()
+		.auto_add_history(true)
+		.edit_mode(rustyline::EditMode::Vi)
+		.build();
+	let mut line_reader = DefaultEditor::with_config(config)
+		.expect("Failed to initialize command interface.");
+	std::thread::spawn(move || {
+		loop {
+			let line = match line_reader.readline("") {
+				Ok(line) => line,
+				Err(ReadlineError::Interrupted | ReadlineError::Eof) => return,
+				Err(_) => continue,
+			};
+			tx.send(line).unwrap();
+		}
+	});
+	rx
 }

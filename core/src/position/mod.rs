@@ -564,7 +564,7 @@ impl Position {
 			board_string.remove(board_string.len() - 1); // Trim final space
 			board_string.push('\n');
 		}
-
+		board_string.remove(board_string.len() - 1); // Trim trailing newline
 		board_string
 	}
 }
