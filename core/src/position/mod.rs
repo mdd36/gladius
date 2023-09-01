@@ -387,12 +387,21 @@ impl Position {
 
 	/// Check what piece is on a square, if any.
 	pub fn piece_on(&self, square: Square) -> Option<Piece> {
-		for piece in Piece::iter() {
-			if self.get_board_for_piece(piece).is_occupied(square) {
-				return Some(piece);
-			}
+		if self.boards[Piece::Rook as usize].is_occupied(square) {
+			Some(Piece::Rook)
+		} else if self.boards[Piece::Knight as usize].is_occupied(square) {
+			Some(Piece::Knight)
+		} else if self.boards[Piece::Bishop as usize].is_occupied(square) {
+			Some(Piece::Bishop)
+		} else if self.boards[Piece::Queen as usize].is_occupied(square) {
+			Some(Piece::Queen)
+		} else if self.boards[Piece::King as usize].is_occupied(square) {
+			Some(Piece::King)
+		} else if self.boards[Piece::Pawn as usize].is_occupied(square) {
+			Some(Piece::Pawn)
+		} else {
+			None
 		}
-		None
 	}
 
 	pub fn color_on(&self, square: Square) -> Option<Color> {

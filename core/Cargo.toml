@@ -5,9 +5,8 @@ edition = "2021"
 authors = [ "Matthew Dickson hi@mattdickson.io"]
 
 [dependencies]
-async-trait = "0.1"
+ahash = "0.8"
 lazy_static = "1.4"
-tokio = "1.30"
 
 [dev-dependencies]
 indoc = "2.0"
@@ -15,3 +14,6 @@ pretty_assertions = "1.4"
 
 [profile.dev]
 overflow-checks = false
+
+[profile.release]
+debug = true

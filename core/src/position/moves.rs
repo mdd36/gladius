@@ -288,10 +288,13 @@ pub fn generate_moves(position: &Position) -> Vec<Move> {
 	pawn_single_moves(position, pins, &mut moves);
 	pawn_double_moves(position, pins, &mut moves);
 
-
+	let king_square = Square::from(
+		position.get_board_for_piece(Piece::King) & position.get_board_for_color(to_move)
+	);
+let king_attackers = attacks::attackers_of_square(king_square, !to_move, position);
 
 	moves.into_iter()
-		.filter(|m| is_legal(position, m))
+		.filter(|m| is_legal(position, king_attackers, m))
 		.collect()
 }
 
@@ -406,7 +409,7 @@ fn pawn_double_moves(position: &Position, pins: Board, moves: &mut Vec<Move>) {
 	}
 }
 
-fn is_legal(position: &Position, proposed_move: &Move) -> bool {
+fn is_legal(position: &Position, checkers: Board, proposed_move: &Move) -> bool {
 	let to_move_color = position.metadata.to_move();
 	let moved_piece = position.piece_on(proposed_move.start).unwrap();
 
@@ -414,8 +417,7 @@ fn is_legal(position: &Position, proposed_move: &Move) -> bool {
 		position.get_board_for_color(to_move_color) & position.get_board_for_piece(Piece::King)
 	);
 	
-	let check_attackers = attacks::attackers_of_square(king_square, !to_move_color, position);
-	let num_checkers = check_attackers.count_ones();
+	let num_checkers = checkers.count_ones();
 	
 	if let Some(side) = proposed_move.flags.castling_side() {
 		let occupancy = position.get_occupancy_board();
@@ -445,10 +447,10 @@ fn is_legal(position: &Position, proposed_move: &Move) -> bool {
 		// Can't make anything but a king move during double check
 		return false;
 	} else if num_checkers > 0 {
-		let check_blocking_squares = between(king_square, check_attackers.into());
+		let check_blocking_squares = between(king_square, checkers.into());
 		// Either block the check or take the sole attacker
 		return check_blocking_squares.is_occupied(proposed_move.target)
-			|| check_attackers.is_occupied(proposed_move.target); 
+			|| checkers.is_occupied(proposed_move.target); 
 	}
 
 	true
@@ -857,10 +859,20 @@ mod movegen_perft {
 
 	fn perft_test(intial_position: Position, expected_nodes: &[usize]) {
 		let mut positions = vec![intial_position];
+		let tic = std::time::Instant::now();
 		for expected in expected_nodes {
 			positions = generate_next_positions(&positions);
 			assert_eq!(positions.len(), *expected);
 		}
+		let toc = tic.elapsed().as_millis();
+
+		println!(
+			"Depth: {}: Found {} nodes in {}ms ({:.3} nodes/sec)",
+			expected_nodes.len(),
+			positions.len(),
+			toc,
+			(positions.len() as f64) / (toc as f64) * 1000f64
+		);
 	}
 
 	fn pretty_print_divide(to_print: &Vec<(String, usize)>) {

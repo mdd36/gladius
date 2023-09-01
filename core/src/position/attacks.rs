@@ -136,12 +136,23 @@ pub fn attackers_of_square(square: Square, attacker_color: Color, position: &Pos
 	let mut attackers_board = Board::default();
 	let attacker_occupancy = position.get_board_for_color(attacker_color);
 	let total_occupancy = position.get_occupancy_board();
+	let square_index = square.lsb_index();
 
-	for piece in Piece::non_pawn() {
-		let attacks_for_piece = get_attacks(total_occupancy, square, piece, attacker_color);
-		let piece_occupancy = position.get_board_for_piece(piece);
-		attackers_board |= attacks_for_piece & attacker_occupancy & piece_occupancy;
-	}
+	let knight_board = position.get_board_for_piece(Piece::Knight);
+	attackers_board |= knight_board & attacker_occupancy & KNIGHT_ATTACKS[square_index];
+
+	let bishop_queen_board = attacker_occupancy
+	 & (position.get_board_for_piece(Piece::Bishop) | position.get_board_for_piece(Piece::Queen));
+	let diagonal_attacks = get_attacks(total_occupancy, square, Piece::Bishop, attacker_color);
+	attackers_board |= diagonal_attacks & bishop_queen_board;
+
+	let rook_queen_board = attacker_occupancy
+	 & (position.get_board_for_piece(Piece::Rook) | position.get_board_for_piece(Piece::Queen));
+	let rank_file_attacks = get_attacks(total_occupancy, square, Piece::Rook, attacker_color);
+	attackers_board |= rank_file_attacks & rook_queen_board;
+
+	let king_board = position.get_board_for_piece(Piece::King);
+	attackers_board |= king_board & attacker_occupancy & KING_ATTACKS[square_index];
 
 	// Pawns are a little different since they can only move forward and do slide attacks
 	let pawn_attacks = get_attacks(total_occupancy, square, Piece::Pawn, !attacker_color);

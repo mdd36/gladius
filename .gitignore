@@ -7,6 +7,9 @@ magic_finder
 rook_magics.json
 bishop_magics.json
 
+# Profiler flame graphs
+*.svg
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
