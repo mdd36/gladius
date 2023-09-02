@@ -1,1 +1,60 @@
+mod material;
+mod positioning;
 
+use crate::position::{Color, Position, Piece};
+use self::{material::material_score, positioning::{positioning_score, pawn_structure, king_safety}};
+
+const PHASE_WEIGHTS: [u32; 7] = [
+	0, 0, 0,  2, 1, 1, 4,
+];
+const TOTAL_PHASE: f64 = 24.0;
+
+pub enum Evaluation {
+	Mate(Color, u8),
+	Score(i16), 
+}
+
+pub fn evaluate_position(position: &Position) -> Evaluation {
+	let us = position.metadata.to_move();
+	let them = !us;
+
+	let our_material = material_score(position, us);
+	let their_material = material_score(position, them);
+	let material_difference = our_material - their_material;
+
+	let our_position = positioning_score(position, us);
+	let their_position = positioning_score(position, them);
+	let positioning_difference = our_position - their_position;
+
+	let our_pawn_structure = pawn_structure(position, us);
+	let their_pawn_structure = pawn_structure(position, them);
+	let pawn_structure_difference = our_pawn_structure - their_pawn_structure;
+
+	let our_king_safety = king_safety(position, us);
+	let their_king_safety = king_safety(position, them);
+	let king_safety_difference = our_king_safety - their_king_safety;
+
+	Evaluation::Score(
+		material_difference + positioning_difference + pawn_structure_difference 
+		+ king_safety_difference
+	)
+}
+
+/// Get a float that represents the current phase of the game based
+/// on remaining material. Approach is inspired by the CPW:
+/// https://www.chessprogramming.org/Tapered_Eval
+fn game_phase(position: &Position) -> f64 {
+	let mut phase = 0;
+	phase += position.get_board_for_piece(Piece::Rook).count_ones() * PHASE_WEIGHTS[Piece::Rook as usize];
+	phase += position.get_board_for_piece(Piece::Knight).count_ones() * PHASE_WEIGHTS[Piece::Knight as usize];
+	phase += position.get_board_for_piece(Piece::Bishop).count_ones() * PHASE_WEIGHTS[Piece::Bishop as usize];
+	phase += position.get_board_for_piece(Piece::Queen).count_ones() * PHASE_WEIGHTS[Piece::Queen as usize];
+
+	((TOTAL_PHASE - phase as f64) * 256.0 + (TOTAL_PHASE / 2.0)) / TOTAL_PHASE
+}
+
+fn combine_phase_scores(position: &Position, early_game: i16, end_game: i16) -> i16 {
+	let phase = game_phase(position);
+	
+	(((early_game as f64 * (256.0 - phase)) + (end_game as f64 * phase)) / 256.0) as i16
+}

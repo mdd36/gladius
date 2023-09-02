@@ -414,6 +414,10 @@ impl Position {
 		}
 	}
 
+	pub fn full_move_clock(&self) -> u8 {
+		todo!()
+	}
+
 	pub fn apply_move(&self, next_move: &moves::Move) -> Position {
 		let color_to_move = self.metadata.to_move() as usize;
 		let moved_piece = self.piece_on(next_move.start).unwrap();
