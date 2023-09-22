@@ -2,6 +2,7 @@
 pub mod magics;
 pub mod attacks;
 pub mod board;
+pub mod hash;
 pub mod moves;
 
 use std::ops::BitOrAssign;
@@ -15,6 +16,25 @@ use self::board::ROOK_CASTLE_MOVE;
 pub enum CastleSide {
 	Queen,
 	King,
+}
+
+impl From<Square> for CastleSide {
+	fn from(value: Square) -> Self {
+		let king = CastleSide::King as usize;
+		let queen = CastleSide::Queen as usize;		
+		let white = Color::White as usize;
+		let black = Color::Black as usize;
+
+		if value == ROOKS[king][white] || value == ROOKS[king][black] {
+			return CastleSide::King;
+		}
+
+		if value == ROOKS[queen][white] || value == ROOKS[queen][black] {
+			return CastleSide::Queen;
+		}
+
+		panic!("Not a valid castling square: {value:?}")
+	}
 }
 
 #[derive(Copy, Clone)]
@@ -183,7 +203,7 @@ impl PositionMetadata {
 		*self = Self(self.0 ^ TO_MOVE_MASK);
 	}
 
-	pub fn revoke_castling_rights(&mut self, color: Color, side: CastleSide) {
+	pub fn revoke_castling_rights_for_side(&mut self, color: Color, side: CastleSide) {
 		let castle_mask = 0b01 << (side as u16) << (2 * color as u16) << 6;
 		*self = Self(self.0 & !castle_mask);
 	}
@@ -473,7 +493,7 @@ impl Position {
 				for color in [Color::White, Color::Black] {
 					let rook_square = ROOKS[side as usize][color as usize];
 					if (next_move.target | next_move.start).is_occupied(rook_square) {
-						metadata.revoke_castling_rights(color, side);
+						metadata.revoke_castling_rights_for_side(color, side);
 					}
 				}
 			}
@@ -609,7 +629,7 @@ mod test {
 		);
 
 		let mut expected_metadata = PositionMetadata::default();
-		expected_metadata.revoke_castling_rights(Color::White, CastleSide::Queen);
+		expected_metadata.revoke_castling_rights_for_side(Color::White, CastleSide::Queen);
 		assert_eq!(position.metadata, expected_metadata);
 	}
 

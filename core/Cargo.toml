@@ -6,6 +6,7 @@ authors = [ "Matthew Dickson hi@mattdickson.io"]
 
 [dependencies]
 ahash = "0.8"
+rand = { version = "0.8", features = [ "small_rng" ] }
 lazy_static = "1.4"
 
 [dev-dependencies]
