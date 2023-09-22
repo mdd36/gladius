@@ -21,7 +21,7 @@ pub enum CastleSide {
 impl From<Square> for CastleSide {
 	fn from(value: Square) -> Self {
 		let king = CastleSide::King as usize;
-		let queen = CastleSide::Queen as usize;		
+		let queen = CastleSide::Queen as usize;
 		let white = Color::White as usize;
 		let black = Color::Black as usize;
 

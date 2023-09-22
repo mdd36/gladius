@@ -1,8 +1,11 @@
 mod parser;
 
-use std::sync::mpsc::{Receiver, channel, TryRecvError};
+use std::sync::mpsc::{channel, Receiver, TryRecvError};
 
-use gladius_core::{engine::{GladiusEngine, Engine, EngineMessage}, position::Position};
+use gladius_core::{
+	engine::{Engine, EngineMessage, GladiusEngine},
+	position::Position,
+};
 use parser::{parse_input, UciCommand};
 use rustyline::{error::ReadlineError, Config, DefaultEditor};
 
@@ -78,7 +81,7 @@ fn uci_loop() {
 	let stdin_rx = stdin_channel();
 	let (engine_tx, engine_rx) = channel();
 	let mut engine = GladiusEngine::new(engine_tx);
-	
+
 	loop {
 		match engine_rx.try_recv() {
 			Ok(EngineMessage::ReadyOk) => println!("readyok"),
@@ -113,7 +116,7 @@ fn uci_loop() {
 			UciCommand::NewGame => {
 				engine.stop();
 				engine.setup_pos(Position::default());
-			},
+			}
 			UciCommand::Position(start_position) => {
 				engine.stop();
 				engine.setup_pos(start_position);
@@ -150,17 +153,15 @@ fn stdin_channel() -> Receiver<String> {
 		.auto_add_history(true)
 		.edit_mode(rustyline::EditMode::Vi)
 		.build();
-	let mut line_reader = DefaultEditor::with_config(config)
-		.expect("Failed to initialize command interface.");
-	std::thread::spawn(move || {
-		loop {
-			let line = match line_reader.readline("") {
-				Ok(line) => line,
-				Err(ReadlineError::Interrupted | ReadlineError::Eof) => return,
-				Err(_) => continue,
-			};
-			tx.send(line).unwrap();
-		}
+	let mut line_reader =
+		DefaultEditor::with_config(config).expect("Failed to initialize command interface.");
+	std::thread::spawn(move || loop {
+		let line = match line_reader.readline("") {
+			Ok(line) => line,
+			Err(ReadlineError::Interrupted | ReadlineError::Eof) => return,
+			Err(_) => continue,
+		};
+		tx.send(line).unwrap();
 	});
 	rx
 }

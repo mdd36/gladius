@@ -1,5 +1,12 @@
-use crate::position::{Position, moves::{MoveDivision, divide, Move}};
-use std::sync::{mpsc::{Sender, Receiver, channel}, RwLock, Arc, atomic::AtomicBool};
+use crate::position::{
+	moves::{divide, Move, MoveDivision},
+	Position,
+};
+use std::sync::{
+	atomic::AtomicBool,
+	mpsc::{channel, Receiver, Sender},
+	Arc, RwLock,
+};
 
 pub struct SearchParameters {
 	search_moves: Option<Vec<Move>>,
@@ -69,7 +76,7 @@ pub struct GladiusEngine {
 
 impl GladiusEngine {
 	pub fn new(output_channel: Sender<EngineMessage>) -> Self {
-		GladiusEngine { 
+		GladiusEngine {
 			position: Arc::new(RwLock::new(Position::default())),
 			opts: EngineOpts::default(),
 			output_channel,
@@ -103,7 +110,8 @@ impl Engine for GladiusEngine {
 		let cloned_position = self.position.read().unwrap().clone();
 		let tx = self.output_channel.clone();
 		std::thread::spawn(move || {
-			tx.send(EngineMessage::Perft(divide(cloned_position, depth))).unwrap();
+			tx.send(EngineMessage::Perft(divide(cloned_position, depth)))
+				.unwrap();
 		});
 	}
 
@@ -111,9 +119,7 @@ impl Engine for GladiusEngine {
 		self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
 	}
 
-	fn go(&self, parameters: SearchParameters) {
-		
-	}
+	fn go(&self, parameters: SearchParameters) {}
 
 	fn ready(&self) {
 		self.output_channel.send(EngineMessage::ReadyOk).unwrap();

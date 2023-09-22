@@ -1,4 +1,8 @@
-use crate::position::{Position, Piece, Color, board::{A_FILE, B_FILE, G_FILE, C_FILE, D_FILE, E_FILE, F_FILE, H_FILE, Square, Board}, attacks::{KING_ATTACKS, self}};
+use crate::position::{
+	attacks::{self, KING_ATTACKS},
+	board::{Board, Square, A_FILE, B_FILE, C_FILE, D_FILE, E_FILE, F_FILE, G_FILE, H_FILE},
+	Color, Piece, Position,
+};
 
 use super::combine_phase_scores;
 
@@ -37,7 +41,6 @@ const KNIGHT_SQUARE_WEIGHTS: [i16; 64] = [
 	-40,-20,  0,  5,  5,  0,-20,-40,
 	-50,-40,-30,-30,-30,-30,-40,-50,
 ];
-
 
 #[rustfmt::skip]
 const BISHOP_SQUARE_WEIGHTS: [i16; 64] = [
@@ -128,27 +131,41 @@ lazy_static::lazy_static!(
 	];
 );
 
-
 pub fn positioning_score(position: &Position, color: Color) -> i16 {
 	let mut score = 0;
 	let our_pieces = position.get_board_for_color(color);
 
 	let pawn_board = position.get_board_for_piece(Piece::Pawn) & our_pieces;
-	score += pawn_board.into_iter().map(|sq| PAWN_SQUARE_WEIGHTS[sq.lsb_index()]).sum::<i16>();
+	score += pawn_board
+		.into_iter()
+		.map(|sq| PAWN_SQUARE_WEIGHTS[sq.lsb_index()])
+		.sum::<i16>();
 
 	let rook_board = position.get_board_for_piece(Piece::Rook) & our_pieces;
-	score += rook_board.into_iter().map(|sq| ROOK_SQUARE_WEIGHTS[sq.lsb_index()]).sum::<i16>();
-	
+	score += rook_board
+		.into_iter()
+		.map(|sq| ROOK_SQUARE_WEIGHTS[sq.lsb_index()])
+		.sum::<i16>();
+
 	let knight_board = position.get_board_for_piece(Piece::Knight) & our_pieces;
-	score += knight_board.into_iter().map(|sq| KNIGHT_SQUARE_WEIGHTS[sq.lsb_index()]).sum::<i16>();
-	
+	score += knight_board
+		.into_iter()
+		.map(|sq| KNIGHT_SQUARE_WEIGHTS[sq.lsb_index()])
+		.sum::<i16>();
+
 	let bishop_board = position.get_board_for_piece(Piece::Bishop) & our_pieces;
-	score += bishop_board.into_iter().map(|sq| BISHOP_SQUARE_WEIGHTS[sq.lsb_index()]).sum::<i16>();
+	score += bishop_board
+		.into_iter()
+		.map(|sq| BISHOP_SQUARE_WEIGHTS[sq.lsb_index()])
+		.sum::<i16>();
 
 	let queen_board = position.get_board_for_piece(Piece::Queen) & our_pieces;
-	score += queen_board.into_iter().map(|sq| QUEEN_SQUARE_WEIGHTS[sq.lsb_index()]).sum::<i16>();
+	score += queen_board
+		.into_iter()
+		.map(|sq| QUEEN_SQUARE_WEIGHTS[sq.lsb_index()])
+		.sum::<i16>();
 
-	// The king is a little different. We want to encourage it to 
+	// The king is a little different. We want to encourage it to
 	// take shelter in the early and mid game, but come out to help
 	// with checkmates in the end game.
 	let king_square = Square::from(position.get_board_for_piece(Piece::King) & our_pieces);
@@ -156,7 +173,7 @@ pub fn positioning_score(position: &Position, color: Color) -> i16 {
 	score += combine_phase_scores(
 		position,
 		KING_SQUARE_WEIGHTS[king_square_index],
-		KING_SQUARE_WEIGHTS_ENDGAME[king_square_index]
+		KING_SQUARE_WEIGHTS_ENDGAME[king_square_index],
 	);
 
 	score
@@ -180,7 +197,7 @@ pub fn pawn_structure(position: &Position, color: Color) -> i16 {
 				Color::Black => pawn.rank(),
 			} as usize;
 			early_game_score += PASSED_PAWN_BONUS[squares_to_promotion];
-			end_game_score += PASSED_PAWN_BONUS_END_GAME[squares_to_promotion];	
+			end_game_score += PASSED_PAWN_BONUS_END_GAME[squares_to_promotion];
 		}
 
 		if is_isolated(pawn, our_pawns) {
@@ -199,8 +216,7 @@ fn is_passed(pawn: Square, color: Color, our_pawns: Board, their_pawns: Board) -
 	};
 	let pawn_file = forward_mask & (A_FILE.as_u64() << pawn.file());
 	let side_files_masks = forward_mask & PAWN_FLANKS[pawn.file() as usize].as_u64();
-	(our_pawns & pawn_file).is_empty() && 
-		(their_pawns & (pawn_file | side_files_masks)).is_empty()
+	(our_pawns & pawn_file).is_empty() && (their_pawns & (pawn_file | side_files_masks)).is_empty()
 }
 
 fn is_isolated(pawn: Square, friendly_pawns: Board) -> bool {
@@ -210,14 +226,12 @@ fn is_isolated(pawn: Square, friendly_pawns: Board) -> bool {
 
 pub fn king_safety(position: &Position, color: Color) -> i16 {
 	let us = position.get_board_for_color(color);
-	let king_square = Square::from(
-		us & position.get_board_for_piece(Piece::King)
-	);
-	
+	let king_square = Square::from(us & position.get_board_for_piece(Piece::King));
+
 	let king_zone = us.as_u64() ^ KING_ATTACKS[king_square.lsb_index()];
 	let attacked_squares = attacks::get_attacked_squares(position, !color);
 	let num_attacks = (attacked_squares & king_square).count_ones();
-	
+
 	let ratio_attacked = king_zone.count_ones() as f64 / num_attacks as f64;
 	let penalty_index = (8.0 * ratio_attacked) as usize;
 

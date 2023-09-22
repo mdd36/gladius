@@ -1,7 +1,10 @@
 use itertools::Itertools;
 use std::{rc::Rc, str::SplitAsciiWhitespace};
 
-use gladius_core::{position::{moves::Move, Position}, engine::SearchParameters};
+use gladius_core::{
+	engine::SearchParameters,
+	position::{moves::Move, Position},
+};
 
 // For the official spec, see
 // https://gist.github.com/DOBRO/2592c6dad754ba67e6dcaec8c90165bf#file-uci-protocol-specification-txt-L41
@@ -11,10 +14,7 @@ pub enum UciCommand {
 	IsReady,
 	Display,
 	Peft(u8),
-	SetOption {
-		name: String,
-		value: Option<String>,
-	},
+	SetOption { name: String, value: Option<String> },
 	Register,
 	NewGame,
 	Position(Position),
@@ -127,8 +127,6 @@ fn parse_position(
 	return Err("No position specified in command");
 }
 
-fn parse_go(
-	cmd: SplitAsciiWhitespace<'_>
-) -> Result<UciCommand, &'static str> {
+fn parse_go(cmd: SplitAsciiWhitespace<'_>) -> Result<UciCommand, &'static str> {
 	todo!()
 }

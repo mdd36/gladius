@@ -700,7 +700,7 @@ pub fn divide(initial: Position, depth: u8) -> MoveDivision {
 
 	MoveDivision {
 		elapsed: toc,
-		moves: divided_moves
+		moves: divided_moves,
 	}
 }
 
@@ -724,7 +724,8 @@ impl std::fmt::Display for MoveDivision {
 			write!(f, "{move_string}: {node_count}\n")?;
 		}
 		let total_nodes = self.iter().map(|tup| tup.1.to_owned()).sum::<usize>();
-		write!(f,
+		write!(
+			f,
 			"Moves: {}\nNodes: {}\nElapsed: {}ms ({:.3} nodes/sec)",
 			self.moves.len(),
 			total_nodes,

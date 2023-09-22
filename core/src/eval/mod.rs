@@ -1,17 +1,18 @@
 mod material;
 mod positioning;
 
-use crate::position::{Color, Position, Piece};
-use self::{material::material_score, positioning::{positioning_score, pawn_structure, king_safety}};
+use self::{
+	material::material_score,
+	positioning::{king_safety, pawn_structure, positioning_score},
+};
+use crate::position::{Color, Piece, Position};
 
-const PHASE_WEIGHTS: [u32; 7] = [
-	0, 0, 0,  2, 1, 1, 4,
-];
+const PHASE_WEIGHTS: [u32; 7] = [0, 0, 0, 2, 1, 1, 4];
 const TOTAL_PHASE: f64 = 24.0;
 
 pub enum Evaluation {
 	Mate(Color, u8),
-	Score(i16), 
+	Score(i16),
 }
 
 pub fn evaluate_position(position: &Position) -> Evaluation {
@@ -35,8 +36,10 @@ pub fn evaluate_position(position: &Position) -> Evaluation {
 	let king_safety_difference = our_king_safety - their_king_safety;
 
 	Evaluation::Score(
-		material_difference + positioning_difference + pawn_structure_difference 
-		+ king_safety_difference
+		material_difference
+			+ positioning_difference
+			+ pawn_structure_difference
+			+ king_safety_difference,
 	)
 }
 
@@ -45,16 +48,20 @@ pub fn evaluate_position(position: &Position) -> Evaluation {
 /// https://www.chessprogramming.org/Tapered_Eval
 fn game_phase(position: &Position) -> f64 {
 	let mut phase = 0;
-	phase += position.get_board_for_piece(Piece::Rook).count_ones() * PHASE_WEIGHTS[Piece::Rook as usize];
-	phase += position.get_board_for_piece(Piece::Knight).count_ones() * PHASE_WEIGHTS[Piece::Knight as usize];
-	phase += position.get_board_for_piece(Piece::Bishop).count_ones() * PHASE_WEIGHTS[Piece::Bishop as usize];
-	phase += position.get_board_for_piece(Piece::Queen).count_ones() * PHASE_WEIGHTS[Piece::Queen as usize];
+	phase += position.get_board_for_piece(Piece::Rook).count_ones()
+		* PHASE_WEIGHTS[Piece::Rook as usize];
+	phase += position.get_board_for_piece(Piece::Knight).count_ones()
+		* PHASE_WEIGHTS[Piece::Knight as usize];
+	phase += position.get_board_for_piece(Piece::Bishop).count_ones()
+		* PHASE_WEIGHTS[Piece::Bishop as usize];
+	phase += position.get_board_for_piece(Piece::Queen).count_ones()
+		* PHASE_WEIGHTS[Piece::Queen as usize];
 
 	((TOTAL_PHASE - phase as f64) * 256.0 + (TOTAL_PHASE / 2.0)) / TOTAL_PHASE
 }
 
 fn combine_phase_scores(position: &Position, early_game: i16, end_game: i16) -> i16 {
 	let phase = game_phase(position);
-	
+
 	(((early_game as f64 * (256.0 - phase)) + (end_game as f64 * phase)) / 256.0) as i16
 }
