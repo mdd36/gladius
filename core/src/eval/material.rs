@@ -35,3 +35,7 @@ pub fn material_score(position: &Position, color: Color) -> i16 {
 		+ MATERIAL_VALUES[Piece::King as usize] * num_kings
 		+ bishop_pair_bonus
 }
+
+pub fn value_of_piece(piece: Piece) -> i16 {
+	MATERIAL_VALUES[piece as usize]
+}

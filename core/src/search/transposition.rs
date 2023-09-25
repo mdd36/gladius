@@ -1,4 +1,7 @@
-use std::sync::{Arc, RwLock, atomic::{AtomicU64, Ordering}};
+use std::sync::{
+	atomic::{AtomicU64, Ordering},
+	Arc, RwLock,
+};
 
 use crate::position::moves::Move;
 
@@ -38,18 +41,18 @@ pub struct TranspositionTable {
 }
 
 impl TranspositionTable {
-
 	/// Create a new [`TranspositionTable`] with a fixed size.  
 	/// The size limit is an upper bound, and the actual table might be smaller than
 	/// the specified size if (desired_size / size_of(Option<TranspositionEntry>)) is
 	/// far from a power of two.  
 	/// The desired size is immediately reserved, so the table will not grow once created.
-	/// If more space is required, it must be manually resized with [`TranspositionTable::resize()`]. 
+	/// If more space is required, it must be manually resized with [`TranspositionTable::resize()`].
 	pub fn new(max_size_bytes: usize) -> Self {
 		// To make accessing items easier, the table size is set to the nearest power of 2 that is
 		// less than or equal to the max size determined based on the size of an entry. This lets
 		// us use a simple bit mask on each key to bucketize the entry into a vector index.
-		let max_entries_for_size = max_size_bytes / std::mem::size_of::<Option<TranspositionEntry>>();
+		let max_entries_for_size =
+			max_size_bytes / std::mem::size_of::<Option<TranspositionEntry>>();
 		let msb_index = 64 - max_entries_for_size.leading_zeros();
 		let table_size = 2usize.pow(msb_index);
 		let table = Arc::new(RwLock::new(vec![None; table_size]));
@@ -58,16 +61,14 @@ impl TranspositionTable {
 		// then subtract one. Ex: (2 ^ 3) - 1 = 7 = 0b0111
 		let key_mask = AtomicU64::from((1 << (msb_index + 1)) - 1);
 
-		Self {
-			table,
-			key_mask,
-		}
+		Self { table, key_mask }
 	}
 
 	/// Resize the table, purging all entries in the process. The memory required for the new table
 	/// is immediately reserved, and the table won't grow after being resized.
 	pub fn resize(&mut self, max_size_bytes: usize) {
-		let max_entries_for_size = max_size_bytes / std::mem::size_of::<Option<TranspositionEntry>>();
+		let max_entries_for_size =
+			max_size_bytes / std::mem::size_of::<Option<TranspositionEntry>>();
 		let msb_index = 64 - max_entries_for_size.leading_zeros();
 		let table_size = 2usize.pow(msb_index);
 
@@ -75,7 +76,8 @@ impl TranspositionTable {
 		// the update is complete.
 		let mut table = self.table.write().unwrap();
 		*table = vec![None; table_size];
-		self.key_mask.store((1 << (msb_index + 1)) - 1, Ordering::Relaxed);
+		self.key_mask
+			.store((1 << (msb_index + 1)) - 1, Ordering::Relaxed);
 	}
 
 	/// Retrieve a value from the table. If the value was missing from the table,

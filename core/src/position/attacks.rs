@@ -134,6 +134,22 @@ pub fn get_attacked_squares(position: &Position, attacker_color: Color) -> Board
 	attacks
 }
 
+pub fn get_attacked_squares_for_piece(
+	position: &Position,
+	attacker_color: Color,
+	piece: Piece,
+) -> Board {
+	let mut attacks = Board::default();
+	let attacker_board = position.get_board_for_color(attacker_color);
+	let occupied = position.get_occupancy_board();
+
+	for attacker_square in position.get_board_for_piece(piece) & attacker_board {
+		attacks |= get_attacks(occupied, attacker_square, piece, attacker_color)
+	}
+
+	attacks
+}
+
 pub fn attackers_of_square(square: Square, attacker_color: Color, position: &Position) -> Board {
 	let mut attackers_board = Board::default();
 	let attacker_occupancy = position.get_board_for_color(attacker_color);

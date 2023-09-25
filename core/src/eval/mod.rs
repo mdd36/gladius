@@ -1,7 +1,9 @@
+mod attacks;
 mod material;
 mod positioning;
 
 use self::{
+	attacks::attacks_score,
 	material::material_score,
 	positioning::{king_safety, pawn_structure, positioning_score},
 };
@@ -35,11 +37,16 @@ pub fn evaluate_position(position: &Position) -> Evaluation {
 	let their_king_safety = king_safety(position, them);
 	let king_safety_difference = our_king_safety - their_king_safety;
 
+	let our_attacks = attacks_score(position, us);
+	let their_attacks = attacks_score(position, them);
+	let attack_difference = our_attacks - their_attacks;
+
 	Evaluation::Score(
 		material_difference
 			+ positioning_difference
 			+ pawn_structure_difference
-			+ king_safety_difference,
+			+ king_safety_difference
+			+ attack_difference,
 	)
 }
 

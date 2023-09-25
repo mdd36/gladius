@@ -155,7 +155,7 @@ impl MoveFlags {
 	}
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct Move {
 	pub flags: MoveFlags,
 	pub start: Square,

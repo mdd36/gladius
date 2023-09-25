@@ -1,8 +1,14 @@
 pub mod transposition;
 
-use std::{time::Duration, sync::mpsc::Sender};
+use std::{sync::mpsc::Sender, time::Duration};
 
-use crate::{position::{moves::{Move, generate_moves}, Position}, eval::evaluate_position};
+use crate::{
+	eval::evaluate_position,
+	position::{
+		moves::{generate_moves, Move},
+		Position,
+	},
+};
 
 /// Because we're thinning our move search space using [alpha-beta pruning],
 /// the score determined in a search may be exact, and upper bound, or a
@@ -32,14 +38,13 @@ pub struct SearchParameters {
 	max_depth: Option<Duration>,
 }
 
-pub fn search(position: &Position, parameters: ) -> Move {
+pub fn search(position: &Position, parameters: SearchParameters) -> Move {
 	let mut possible_moves = generate_moves(position);
 	possible_moves.sort_by(|a, b| {
 		return std::cmp::Ordering::Equal;
 	});
 	let alpha = 0i8;
 	let beta = 0i8;
-
 
 	todo!()
 }
