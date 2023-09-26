@@ -1,9 +1,9 @@
 use rand::{rngs::SmallRng, RngCore, SeedableRng};
 
 use super::{
-	board::CASTLE_RIGHTS_SQUARES,
+	board::{Board, CASTLE_RIGHTS_SQUARES},
 	moves::{Move, MOVE_DIRECTION},
-	CastleSide, Color, Piece, Position,
+	CastleSide, Color, Piece, Position, PositionMetadata,
 };
 
 lazy_static::lazy_static! {
@@ -39,14 +39,18 @@ fn init_zobrist() -> [u64; 781] {
 /// the number of unique 64 bit values is on the order of 10^19. There
 /// isn't much we can do to avoid that, and it's a tradeoff that we need to
 /// accept if we want the benefits of a position cache (and we do).
-pub fn hash(position: &Position) -> u64 {
+pub fn hash_position(position: &Position) -> u64 {
+	hash(&position.boards, &position.metadata)
+}
+
+pub fn hash(boards: &[Board; 8], metadata: &PositionMetadata) -> u64 {
 	let mut hash = 0;
 
 	// Hash components from the piece locations
 	for piece in Piece::iter() {
-		let piece_locations = position.get_board_for_piece(piece);
+		let piece_locations = boards[piece as usize];
 		for color in [Color::Black, Color::White] {
-			let color_board = position.get_board_for_color(color);
+			let color_board = boards[color as usize];
 			for square in (piece_locations & color_board) {
 				let zobirst_value_index = (color as usize) * (64 * 6) + // Select the right color range
 					(piece as usize - 2) * 64 + // Select the right piece range
@@ -58,40 +62,28 @@ pub fn hash(position: &Position) -> u64 {
 	}
 
 	// Hash components from to move
-	if let Color::Black = position.metadata.to_move() {
+	if let Color::Black = metadata.to_move() {
 		hash ^= ZOBRIST_RANDOMS[TO_MOVE_ZOBRIST_INDEX];
 	}
 
 	// Hash component from castling
-	if position
-		.metadata
-		.can_castle(Color::White, super::CastleSide::Queen)
-	{
+	if metadata.can_castle(Color::White, super::CastleSide::Queen) {
 		hash ^= ZOBRIST_RANDOMS[CASTLING_ZOBRIST_INDEX];
 	}
 
-	if position
-		.metadata
-		.can_castle(Color::White, super::CastleSide::King)
-	{
+	if metadata.can_castle(Color::White, super::CastleSide::King) {
 		hash ^= ZOBRIST_RANDOMS[CASTLING_ZOBRIST_INDEX + 1];
 	}
 
-	if position
-		.metadata
-		.can_castle(Color::Black, super::CastleSide::Queen)
-	{
+	if metadata.can_castle(Color::Black, super::CastleSide::Queen) {
 		hash ^= ZOBRIST_RANDOMS[CASTLING_ZOBRIST_INDEX + 2];
 	}
 
-	if position
-		.metadata
-		.can_castle(Color::Black, super::CastleSide::King)
-	{
+	if metadata.can_castle(Color::Black, super::CastleSide::King) {
 		hash ^= ZOBRIST_RANDOMS[CASTLING_ZOBRIST_INDEX + 3];
 	}
 	// Hash component from en passant
-	if let Some(square) = position.metadata.en_passant_square() {
+	if let Some(square) = metadata.en_passant_square() {
 		hash ^= ZOBRIST_RANDOMS[EN_PASSANT_ZOBRIST_INDEX + square.file() as usize];
 	}
 
@@ -182,13 +174,13 @@ mod test {
 	#[test]
 	pub fn test_hash_update() {
 		let mut position = Position::default();
-		let mut running_hash = hash(&position);
+		let mut running_hash = hash_position(&position);
 
 		// En passant created
 		let m = Move::from_uci_str("e2e4", &position);
 		running_hash = hash_after_move(running_hash, &position, &m);
 		position = position.apply_move(&m);
-		let expected_hash = hash(
+		let expected_hash = hash_position(
 			&Position::from_fen("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1")
 				.unwrap(),
 		);
@@ -198,7 +190,7 @@ mod test {
 		let m = Move::from_uci_str("g8f6", &position);
 		running_hash = hash_after_move(running_hash, &position, &m);
 		position = position.apply_move(&m);
-		let expected_hash = hash(
+		let expected_hash = hash_position(
 			&Position::from_fen("rnbqkb1r/pppppppp/5n2/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1")
 				.unwrap(),
 		);
@@ -208,7 +200,7 @@ mod test {
 		let m = Move::from_uci_str("e1e2", &position);
 		running_hash = hash_after_move(running_hash, &position, &m);
 		position = position.apply_move(&m);
-		let expected_hash = hash(
+		let expected_hash = hash_position(
 			&Position::from_fen("rnbqkb1r/pppppppp/5n2/8/4P3/8/PPPPKPPP/RNBQ1BNR b kq - 0 1")
 				.unwrap(),
 		);
@@ -218,7 +210,7 @@ mod test {
 		let m = Move::from_uci_str("f6e4", &position);
 		running_hash = hash_after_move(running_hash, &position, &m);
 		position = position.apply_move(&m);
-		let expected_hash = hash(
+		let expected_hash = hash_position(
 			&Position::from_fen("rnbqkb1r/pppppppp/8/8/4n3/8/PPPPKPPP/RNBQ1BNR w kq - 0 1")
 				.unwrap(),
 		);

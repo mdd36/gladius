@@ -12,12 +12,7 @@ use crate::position::{Color, Piece, Position};
 const PHASE_WEIGHTS: [u32; 7] = [0, 0, 0, 2, 1, 1, 4];
 const TOTAL_PHASE: f64 = 24.0;
 
-pub enum Evaluation {
-	Mate(Color, u8),
-	Score(i16),
-}
-
-pub fn evaluate_position(position: &Position) -> Evaluation {
+pub fn evaluate_position(position: &Position) -> i16 {
 	let us = position.metadata.to_move();
 	let them = !us;
 
@@ -41,13 +36,11 @@ pub fn evaluate_position(position: &Position) -> Evaluation {
 	let their_attacks = attacks_score(position, them);
 	let attack_difference = our_attacks - their_attacks;
 
-	Evaluation::Score(
-		material_difference
-			+ positioning_difference
-			+ pawn_structure_difference
-			+ king_safety_difference
-			+ attack_difference,
-	)
+	material_difference
+		+ positioning_difference
+		+ pawn_structure_difference
+		+ king_safety_difference
+		+ attack_difference
 }
 
 /// Get a float that represents the current phase of the game based

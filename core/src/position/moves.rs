@@ -163,6 +163,13 @@ pub struct Move {
 }
 
 impl Move {
+	pub fn null_move() -> Self {
+		Self {
+			flags: MoveFlags::default(),
+			start: Square::from(0),
+			target: Square::from(0),
+		}
+	}
 	/// Read a move from a UCI formatted string, like a2a4.
 	///
 	/// ### Example
@@ -302,7 +309,7 @@ impl std::fmt::Display for Move {
 /// #### Return
 /// A vector of all the moves that can be played from the current
 /// position. If the list is empty, it's checkmate!
-pub fn generate_moves(position: &Position) -> Vec<Move> {
+pub fn generate_moves<const QUIESCENT: bool>(position: &Position) -> Vec<Move> {
 	let metadata = position.metadata;
 	let to_move = metadata.to_move();
 
@@ -349,10 +356,17 @@ pub fn generate_moves(position: &Position) -> Vec<Move> {
 	);
 	let king_attackers = attacks::attackers_of_square(king_square, !to_move, position);
 
-	moves
-		.into_iter()
-		.filter(|m| is_legal(position, king_attackers, m))
-		.collect()
+	if QUIESCENT {
+		moves
+			.into_iter()
+			.filter(|m| m.flags.is_capture() && is_legal(position, king_attackers, m))
+			.collect()
+	} else {
+		moves
+			.into_iter()
+			.filter(|m| is_legal(position, king_attackers, m))
+			.collect()
+	}
 }
 
 /// Get all the standard moves for a piece, eg the ones that are created by it executing
@@ -674,13 +688,16 @@ fn pins(position: &Position) -> Board {
 pub fn divide(initial: Position, depth: u8) -> MoveDivision {
 	let mut divided_moves = Vec::new();
 	let tic = std::time::Instant::now();
-	let moves = generate_moves(&initial);
+	let moves = generate_moves::<false>(&initial);
 
 	for m in moves {
 		let mut total_positions = 1;
 		let mut positions = vec![initial.apply_move(&m)];
 		for _ in 1..depth {
-			let moves: Vec<Vec<Move>> = positions.iter().map(|pos| generate_moves(pos)).collect();
+			let moves: Vec<Vec<Move>> = positions
+				.iter()
+				.map(|pos| generate_moves::<false>(pos))
+				.collect();
 
 			positions = moves
 				.iter()
@@ -788,7 +805,7 @@ mod test {
 			},
 		];
 
-		let actual_moves: Vec<Move> = generate_moves(&position)
+		let actual_moves: Vec<Move> = generate_moves::<false>(&position)
 			.into_iter()
 			.filter(|m| m.start == rook_square)
 			.collect();
@@ -824,7 +841,7 @@ mod test {
 			},
 		];
 
-		let actual_moves: Vec<Move> = generate_moves(&position)
+		let actual_moves: Vec<Move> = generate_moves::<false>(&position)
 			.into_iter()
 			.filter(|m| m.start == knight_square)
 			.collect();
@@ -890,7 +907,7 @@ mod test {
 			},
 		];
 
-		let actual_moves: Vec<Move> = generate_moves(&position)
+		let actual_moves: Vec<Move> = generate_moves::<false>(&position)
 			.into_iter()
 			.filter(|m| m.start == bishop_square)
 			.collect();
@@ -1011,7 +1028,7 @@ mod test {
 			},
 		];
 
-		let actual_moves: Vec<Move> = generate_moves(&position)
+		let actual_moves: Vec<Move> = generate_moves::<false>(&position)
 			.into_iter()
 			.filter(|m| m.start == queen_square)
 			.collect();
@@ -1037,7 +1054,7 @@ mod test {
 			},
 		];
 
-		let actual_moves: Vec<Move> = generate_moves(&position)
+		let actual_moves: Vec<Move> = generate_moves::<false>(&position)
 			.into_iter()
 			.filter(|m| m.start == king_square)
 			.collect();
@@ -1053,7 +1070,7 @@ mod test {
 		let king_square = Square::from_algebraic_notation("e1");
 		let destination_square = Square::from_algebraic_notation("g1");
 
-		let actual_move = generate_moves(&position)
+		let actual_move = generate_moves::<false>(&position)
 			.into_iter()
 			.find(|m| m.start == king_square && m.target == destination_square);
 
@@ -1065,7 +1082,7 @@ mod test {
 
 		let destination_square = Square::from_algebraic_notation("c1");
 
-		let actual_move = generate_moves(&position)
+		let actual_move = generate_moves::<false>(&position)
 			.into_iter()
 			.find(|m| m.start == king_square && m.target == destination_square);
 
@@ -1085,7 +1102,7 @@ mod test {
 			flags: MoveFlags::quiet_move(),
 		}];
 
-		let actual_moves: Vec<Move> = generate_moves(&position)
+		let actual_moves: Vec<Move> = generate_moves::<false>(&position)
 			.into_iter()
 			.filter(|m| m.start == king_square)
 			.collect();
@@ -1112,7 +1129,7 @@ mod test {
 			},
 		];
 
-		let actual_moves: Vec<Move> = generate_moves(&position)
+		let actual_moves: Vec<Move> = generate_moves::<false>(&position)
 			.into_iter()
 			.filter(|m| m.start == queen_square)
 			.collect();
@@ -1131,7 +1148,7 @@ mod test {
 			flags: MoveFlags::quiet_move(),
 		}];
 
-		let actual_moves: Vec<Move> = generate_moves(&position)
+		let actual_moves: Vec<Move> = generate_moves::<false>(&position)
 			.into_iter()
 			.filter(|m| m.start == pawn_square)
 			.collect();
@@ -1157,7 +1174,7 @@ mod test {
 			},
 		];
 
-		let actual_moves: Vec<Move> = generate_moves(&position)
+		let actual_moves: Vec<Move> = generate_moves::<false>(&position)
 			.into_iter()
 			.filter(|m| m.start == pawn_square)
 			.collect();
@@ -1184,7 +1201,7 @@ mod test {
 			},
 		];
 
-		let actual_move: Vec<Move> = generate_moves(&position)
+		let actual_move: Vec<Move> = generate_moves::<false>(&position)
 			.into_iter()
 			.filter(|m| m.start == pawn_square)
 			.collect();
@@ -1211,7 +1228,7 @@ mod test {
 			},
 		];
 
-		let actual_move: Vec<Move> = generate_moves(&position)
+		let actual_move: Vec<Move> = generate_moves::<false>(&position)
 			.into_iter()
 			.filter(|m| m.start == pawn_square)
 			.collect();
@@ -1268,7 +1285,7 @@ mod test {
 			},
 		];
 
-		let actual_moves: Vec<Move> = generate_moves(&position)
+		let actual_moves: Vec<Move> = generate_moves::<false>(&position)
 			.into_iter()
 			.filter(|m| m.start == pawn_square)
 			.collect();
@@ -1302,7 +1319,10 @@ mod movegen_perft {
 	}
 
 	fn generate_next_positions(positions: &Vec<Position>) -> Vec<Position> {
-		let moves: Vec<Vec<Move>> = positions.iter().map(|pos| generate_moves(pos)).collect();
+		let moves: Vec<Vec<Move>> = positions
+			.iter()
+			.map(|pos| generate_moves::<false>(pos))
+			.collect();
 
 		moves
 			.iter()

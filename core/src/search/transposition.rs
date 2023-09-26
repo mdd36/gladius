@@ -3,7 +3,7 @@ use std::sync::{
 	Arc, RwLock,
 };
 
-use crate::position::moves::Move;
+use crate::position::{moves::Move, Position};
 
 use super::Score;
 
@@ -14,30 +14,43 @@ pub struct TranspositionEntry {
 	/// to keep table size reasonable, but we want to preserve the whole key
 	/// to double check that the hashes are the same. We're still prone to
 	/// key collisions, but we avoid index collisions.
-	key: u64,
+	pub key: u64,
 
 	/// What we determined the best move was the last time we hit this position.
-	best_move: Move,
+	pub best_move: Move,
 
 	/// How deeply we've searched this position. This helps us make more intelligent
 	/// eviction decisions, since deeply searched nodes are more valuable than
 	/// shallowly searched ones.
-	depth: u8,
+	pub depth: u8,
 
 	/// The resulting score after playing the best move. This can help with move
 	/// ordering to increase the number of pruned nodes from the search tree.
-	score: Score,
+	pub score: Score,
 
 	/// The half-move age of this row. This is used to help kick out
 	/// older positions that are probably not as relevant when we have
 	/// an index collision.
-	age: u8,
+	pub age: u8,
+}
+
+impl TranspositionEntry {
+	pub fn from(position: &Position, best_move: Move, score: Score, depth: u8) -> Self {
+		Self {
+			key: position.zobrist_hash,
+			age: position.full_move_clock(),
+			best_move,
+			score,
+			depth,
+		}
+	}
 }
 
 /// A thread-safe lookup table to store the results of previous searches.
+#[derive(Clone)]
 pub struct TranspositionTable {
 	table: Arc<RwLock<Vec<Option<TranspositionEntry>>>>,
-	key_mask: AtomicU64,
+	key_mask: Arc<AtomicU64>,
 }
 
 impl TranspositionTable {
@@ -59,7 +72,7 @@ impl TranspositionTable {
 
 		// Easiest way to get all ones up to the msb_index is to create 2 ^ (msb_index + 1),
 		// then subtract one. Ex: (2 ^ 3) - 1 = 7 = 0b0111
-		let key_mask = AtomicU64::from((1 << (msb_index + 1)) - 1);
+		let key_mask = Arc::new(AtomicU64::from((1 << (msb_index + 1)) - 1));
 
 		Self { table, key_mask }
 	}
@@ -91,8 +104,15 @@ impl TranspositionTable {
 	/// Insert a value into the table.
 	pub fn insert(&mut self, entry: TranspositionEntry) {
 		let mut table = self.table.write().unwrap();
-		let index = self.key_mask.fetch_and(entry.key, Ordering::Relaxed);
-		table[index as usize] = Some(entry);
+		let index = self.key_mask.fetch_and(entry.key, Ordering::Relaxed) as usize;
+
+		if let Some(existing_entry) = table[index] {
+			if entry.depth > existing_entry.depth || (entry.age - existing_entry.age) > 10 {
+				table[index as usize] = Some(entry);
+			}
+		} else {
+			table[index as usize] = Some(entry);
+		}
 	}
 
 	/// Clear all values from the table. Retains the same underlying memory

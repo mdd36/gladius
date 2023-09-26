@@ -10,7 +10,11 @@ use std::ops::BitOrAssign;
 use board::{Board, Square, CASTLE_RIGHTS_SQUARES, ROOKS};
 use moves::MOVE_DIRECTION;
 
-use self::board::ROOK_CASTLE_MOVE;
+use self::{
+	attacks::attackers_of_square,
+	board::ROOK_CASTLE_MOVE,
+	hash::{hash, hash_after_move, hash_position},
+};
 
 #[derive(Copy, Clone)]
 pub enum CastleSide {
@@ -245,24 +249,29 @@ impl PositionMetadata {
 pub struct Position {
 	pub boards: [Board; 8],
 	pub metadata: PositionMetadata,
+	pub zobrist_hash: u64,
 }
 
 impl Default for Position {
 	/// Initializes the position to the default starting position for
 	/// chess games.
 	fn default() -> Self {
+		let boards = [
+			Board::from(0x000000000000ffff), // White
+			Board::from(0xffff000000000000), // Black
+			Board::from(0x00ff00000000ff00), // Pawns
+			Board::from(0x8100000000000081), // Rooks
+			Board::from(0x4200000000000042), // Knights
+			Board::from(0x2400000000000024), // Bishops
+			Board::from(0x0800000000000008), // Queens
+			Board::from(0x1000000000000010), // Kings
+		];
+		let metadata = PositionMetadata::default();
+		let zobrist_hash = hash(&boards, &metadata);
 		Self {
-			boards: [
-				Board::from(0x000000000000ffff), // White
-				Board::from(0xffff000000000000), // Black
-				Board::from(0x00ff00000000ff00), // Pawns
-				Board::from(0x8100000000000081), // Rooks
-				Board::from(0x4200000000000042), // Knights
-				Board::from(0x2400000000000024), // Bishops
-				Board::from(0x0800000000000008), // Queens
-				Board::from(0x1000000000000010), // Kings
-			],
-			metadata: PositionMetadata::default(),
+			boards,
+			metadata,
+			zobrist_hash,
 		}
 	}
 }
@@ -280,9 +289,13 @@ impl std::fmt::Debug for Position {
 
 impl Position {
 	pub fn blank() -> Self {
+		let boards = Default::default();
+		let metadata = PositionMetadata::blank();
+		let zobrist_hash = hash(&boards, &metadata);
 		Self {
-			boards: Default::default(),
-			metadata: PositionMetadata::blank(),
+			boards,
+			metadata,
+			zobrist_hash,
 		}
 	}
 
@@ -438,6 +451,12 @@ impl Position {
 		todo!()
 	}
 
+	pub fn is_in_check(&self, color: Color) -> bool {
+		let king_square =
+			Square::from(self.get_board_for_color(color) & self.get_board_for_piece(Piece::King));
+		attackers_of_square(king_square, !color, self).has_pieces()
+	}
+
 	pub fn apply_move(&self, next_move: &moves::Move) -> Position {
 		let color_to_move = self.metadata.to_move() as usize;
 		let moved_piece = self.piece_on(next_move.start).unwrap();
@@ -508,7 +527,14 @@ impl Position {
 			metadata.increment_half_move();
 		}
 
-		Self { boards, metadata }
+		// Calculate the new hash
+		let zobrist_hash = hash_after_move(self.zobrist_hash, &self, next_move);
+
+		Self {
+			boards,
+			metadata,
+			zobrist_hash,
+		}
 	}
 
 	/// Print the board to the console.
