@@ -280,9 +280,10 @@ impl std::fmt::Debug for Position {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		write!(
 			f,
-			"Board:\n{}\nMetadata: {:?}",
+			"Board:\n{}\nMetadata: {:?}\nHash: {}",
 			self.as_display_string(),
-			self.metadata
+			self.metadata,
+			self.zobrist_hash,
 		)
 	}
 }
@@ -394,6 +395,9 @@ impl Position {
 			.flatten()
 			.unwrap_or(0);
 		position.metadata.0 += moves;
+
+		// Add the hash
+		position.zobrist_hash = hash(&position.boards, &position.metadata);
 
 		Ok(position)
 	}
