@@ -7,7 +7,7 @@ use self::{
 	material::material_score,
 	positioning::{king_safety, pawn_structure, positioning_score},
 };
-use crate::position::{Color, Piece, Position};
+use crate::position::{Piece, Position};
 
 const PHASE_WEIGHTS: [u32; 7] = [0, 0, 0, 2, 1, 1, 4];
 const TOTAL_PHASE: f64 = 24.0;

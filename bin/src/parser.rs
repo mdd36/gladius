@@ -1,5 +1,5 @@
 use itertools::Itertools;
-use std::{rc::Rc, str::SplitAsciiWhitespace};
+use std::str::SplitAsciiWhitespace;
 
 use gladius_core::{
 	engine::SearchParameters,

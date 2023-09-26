@@ -1,9 +1,12 @@
 mod parser;
 
-use std::sync::mpsc::{channel, Receiver, TryRecvError};
+use std::{
+	process::exit,
+	sync::mpsc::{channel, Receiver, TryRecvError},
+};
 
 use gladius_core::{
-	engine::{Engine, EngineMessage, GladiusEngine},
+	engine::{Engine, EngineMessage, EngineOpts, GladiusEngine},
 	position::Position,
 };
 use parser::{parse_input, UciCommand};
@@ -80,13 +83,14 @@ fn main() {
 fn uci_loop() {
 	let stdin_rx = stdin_channel();
 	let (engine_tx, engine_rx) = channel();
-	let mut engine = GladiusEngine::new(engine_tx);
+	let mut engine = GladiusEngine::new(EngineOpts::default(), engine_tx);
 
 	loop {
 		match engine_rx.try_recv() {
 			Ok(EngineMessage::ReadyOk) => println!("readyok"),
-			Ok(EngineMessage::Perft(move_division)) => println!("{}", move_division),
-			Ok(EngineMessage::BestMove(bm)) => println!("{}", bm),
+			Ok(EngineMessage::Perft(move_division)) => println!("{move_division}"),
+			Ok(EngineMessage::BestMove(bm)) => println!("bestmove {bm}"),
+			Ok(EngineMessage::Error(msg)) => eprintln!("error {msg}"),
 			_ => {}
 		};
 
@@ -158,7 +162,7 @@ fn stdin_channel() -> Receiver<String> {
 	std::thread::spawn(move || loop {
 		let line = match line_reader.readline("") {
 			Ok(line) => line,
-			Err(ReadlineError::Interrupted | ReadlineError::Eof) => return,
+			Err(ReadlineError::Interrupted | ReadlineError::Eof) => exit(0),
 			Err(_) => continue,
 		};
 		tx.send(line).unwrap();

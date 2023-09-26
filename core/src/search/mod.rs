@@ -193,7 +193,7 @@ pub fn search<const QUIESCENT: bool>(
 		}
 	}
 
-	possible_moves.sort_by(|a, b| {
+	possible_moves.sort_by(|_a, _b| {
 		// TODO implement move ordering
 		return std::cmp::Ordering::Equal;
 	});

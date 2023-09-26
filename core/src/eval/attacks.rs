@@ -13,7 +13,6 @@ const ATTACK_POTENTIAL_SCALER: i16 = 2;
 
 pub fn attacks_score(position: &Position, color: Color) -> i16 {
 	let mut score = 0;
-	let occupancy = position.get_occupancy_board();
 	let their_board = position.get_board_for_color(!color);
 	let their_attacks = get_attacked_squares(position, !color);
 

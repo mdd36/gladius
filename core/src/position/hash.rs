@@ -51,7 +51,7 @@ pub fn hash(boards: &[Board; 8], metadata: &PositionMetadata) -> u64 {
 		let piece_locations = boards[piece as usize];
 		for color in [Color::Black, Color::White] {
 			let color_board = boards[color as usize];
-			for square in (piece_locations & color_board) {
+			for square in piece_locations & color_board {
 				let zobirst_value_index = (color as usize) * (64 * 6) + // Select the right color range
 					(piece as usize - 2) * 64 + // Select the right piece range
 					square.lsb_index(); // Select the square that the piece is on

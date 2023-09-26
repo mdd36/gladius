@@ -8,20 +8,18 @@ use crate::{
 use std::{
 	sync::{
 		atomic::{AtomicBool, Ordering},
-		mpsc::{channel, Receiver, Sender},
+		mpsc::Sender,
 		Arc, RwLock,
 	},
 	time::Duration,
 };
 
 pub struct SearchParameters {
-	search_moves: Option<Vec<Move>>,
 	wtime: Option<u32>,
 	btime: Option<u32>,
 	winc: Option<u32>,
 	binc: Option<u32>,
 	depth: Option<u8>,
-	nodes: Option<u32>,
 	move_time: Option<Duration>,
 	infinite: Option<bool>,
 }
@@ -121,7 +119,7 @@ impl Engine for GladiusEngine {
 			self.output_channel.send(EngineMessage::Error(
 				"A search is already running. Stop the current search before starting a new one"
 					.to_owned(),
-			));
+			)).expect("Engine message channel was prematurely closed!");
 			return;
 		}
 
@@ -169,7 +167,9 @@ impl Engine for GladiusEngine {
 			};
 
 			stop_flag.store(false, Ordering::Relaxed);
-			search_tx.send(message);
+			search_tx
+				.send(message)
+				.expect("Engine messaging channel was prematurely closed!");
 		});
 	}
 

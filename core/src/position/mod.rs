@@ -13,7 +13,7 @@ use moves::MOVE_DIRECTION;
 use self::{
 	attacks::attackers_of_square,
 	board::ROOK_CASTLE_MOVE,
-	hash::{hash, hash_after_move, hash_position},
+	hash::{hash, hash_after_move},
 };
 
 #[derive(Copy, Clone)]
