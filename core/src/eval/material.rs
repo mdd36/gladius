@@ -39,3 +39,7 @@ pub fn material_score(position: &Position, color: Color) -> i16 {
 pub fn value_of_piece(piece: Piece) -> i16 {
 	MATERIAL_VALUES[piece as usize]
 }
+
+pub fn static_exchange(attacker: Piece, captured: Piece) -> i16 {
+	value_of_piece(captured) - value_of_piece(attacker)
+}

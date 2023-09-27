@@ -1,3 +1,4 @@
+pub mod move_ordering;
 pub mod transposition;
 
 use std::sync::{
@@ -240,6 +241,7 @@ pub fn search<const QUIESCENT: bool>(
 			best_move = Some(m);
 		}
 	}
+
 	if let Some(m) = best_move {
 		let table_entry = TranspositionEntry::from(position, m, best_score, parameters.ply);
 		transposition_table.insert(table_entry);

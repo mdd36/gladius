@@ -1,6 +1,6 @@
 mod attacks;
-mod material;
-mod positioning;
+pub mod material;
+pub mod positioning;
 
 use self::{
 	attacks::attacks_score,
