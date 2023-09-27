@@ -31,14 +31,14 @@ pub struct TranspositionEntry {
 	/// The half-move age of this row. This is used to help kick out
 	/// older positions that are probably not as relevant when we have
 	/// an index collision.
-	pub age: u8,
+	pub age: u16,
 }
 
 impl TranspositionEntry {
 	pub fn from(position: &Position, best_move: Move, score: Score, depth: u8) -> Self {
 		Self {
 			key: position.zobrist_hash,
-			age: position.full_move_clock(),
+			age: position.full_move_clock,
 			best_move,
 			score,
 			depth,

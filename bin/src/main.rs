@@ -7,7 +7,6 @@ use std::{
 
 use gladius_core::{
 	engine::{Engine, EngineMessage, EngineOpts, GladiusEngine},
-	position::Position,
 };
 use parser::{parse_input, UciCommand};
 use rustyline::{error::ReadlineError, Config, DefaultEditor};
@@ -119,11 +118,11 @@ fn uci_loop() {
 			}
 			UciCommand::NewGame => {
 				engine.stop();
-				engine.setup_pos(Position::default());
+				engine.new_game();
 			}
-			UciCommand::Position(start_position) => {
+			UciCommand::Position(start_position, moves) => {
 				engine.stop();
-				engine.setup_pos(start_position);
+				engine.setup_pos(start_position, moves);
 			}
 			UciCommand::Display => {
 				println!("{}", engine.display());

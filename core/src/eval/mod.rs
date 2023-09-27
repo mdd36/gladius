@@ -1,6 +1,7 @@
 mod attacks;
 pub mod material;
 pub mod positioning;
+pub mod repetition;
 
 use self::{
 	attacks::attacks_score,

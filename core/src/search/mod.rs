@@ -7,14 +7,14 @@ use std::sync::{
 };
 
 use crate::{
-	eval::evaluate_position,
+	eval::{evaluate_position, repetition::is_threefold_repetition},
 	position::{
 		moves::{generate_moves, Move},
 		Color, Piece, Position,
 	},
 };
 
-use self::transposition::{TranspositionEntry, TranspositionTable};
+use self::{transposition::{TranspositionEntry, TranspositionTable}, move_ordering::MoveOrderer};
 
 const MAX_EXTENSION_DEPTH: u8 = 16;
 const DELTA: i16 = 200; // Starting with 200 centipawns
@@ -117,12 +117,20 @@ impl From<TranspositionEntry> for SearchResult {
 
 pub fn search<const QUIESCENT: bool>(
 	position: &Position,
+	position_history: &mut Vec<u64>,
 	transposition_table: &mut TranspositionTable,
+	move_orderer: &mut MoveOrderer,
 	mut parameters: SearchParameters,
 	stop: Arc<AtomicBool>,
 ) -> SearchResult {
 	let mut best_score = Score::UpperBound(parameters.alpha);
-	let mut best_move = None;
+	let saved_position = transposition_table.get(position.zobrist_hash);
+	let mut best_move = match saved_position {
+		Some(entry) if entry.key == position.zobrist_hash => Some(entry.best_move),
+		_ => None,
+	};
+
+	move_orderer.add_hash_move(parameters.ply_from_root, best_move);
 
 	if QUIESCENT && parameters.ply == 0 {
 		return SearchResult {
@@ -134,7 +142,9 @@ pub fn search<const QUIESCENT: bool>(
 	if parameters.ply == 0 {
 		return search::<true>(
 			position,
+			position_history,
 			transposition_table,
+			move_orderer,
 			parameters.quiescent(),
 			stop.clone(),
 		);
@@ -165,8 +175,8 @@ pub fn search<const QUIESCENT: bool>(
 		}
 	}
 
-	if let Some(entry) = transposition_table.get(position.zobrist_hash) {
-		if entry.key == position.zobrist_hash && entry.depth >= parameters.ply {
+	if let Some(entry) = saved_position {
+		if entry.depth >= parameters.ply {
 			return SearchResult::from(entry);
 		}
 	};
@@ -194,10 +204,7 @@ pub fn search<const QUIESCENT: bool>(
 		}
 	}
 
-	possible_moves.sort_by(|_a, _b| {
-		// TODO implement move ordering
-		return std::cmp::Ordering::Equal;
-	});
+	move_orderer.order(position, parameters.ply_from_root, &mut possible_moves);
 
 	for m in possible_moves {
 		if stop.load(Ordering::Relaxed) {
@@ -210,6 +217,15 @@ pub fn search<const QUIESCENT: bool>(
 		let new_position = position.apply_move(&m);
 		let mut next_ply_parameters = parameters.next_ply();
 
+		if is_threefold_repetition(new_position.half_move_clock(), parameters.ply_from_root, position_history, new_position.zobrist_hash) {
+			return SearchResult {
+				score: 0,
+				best_move: best_move,
+			}
+		}
+
+		position_history.push(new_position.zobrist_hash);
+
 		if !QUIESCENT {
 			let extensions = extensions(parameters.extensions, &new_position, &m);
 			next_ply_parameters.add_extension(extensions);
@@ -217,17 +233,22 @@ pub fn search<const QUIESCENT: bool>(
 
 		let score = -search::<QUIESCENT>(
 			&new_position,
+			position_history,
 			transposition_table,
+			move_orderer,
 			next_ply_parameters,
 			stop.clone(),
 		)
 		.score;
+
+		position_history.pop();
 
 		if score >= parameters.beta {
 			// This move is too good for us, so our opponent won't let us play it
 			let table_entry =
 				TranspositionEntry::from(position, m, Score::LowerBound(score), parameters.ply);
 			transposition_table.insert(table_entry);
+			move_orderer.add_killer(parameters.ply_from_root, m);
 			return SearchResult {
 				score,
 				best_move: Some(m),
@@ -260,7 +281,6 @@ fn extensions(num_extensions: u8, position: &Position, move_taken: &Move) -> u8 
 	if moved_piece == Piece::Pawn
 		&& (move_taken.target.rank() == 1 || move_taken.target.rank() == 6)
 	{
-		// Near promotion
 		extension += 1;
 	}
 

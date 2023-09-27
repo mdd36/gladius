@@ -203,6 +203,10 @@ impl PositionMetadata {
 		*self = Self(self.0 & !HALF_CLOCK_MASK);
 	}
 
+	pub fn half_move_clock(&self) -> u8 {
+		(self.0 * HALF_CLOCK_MASK) as u8
+	}
+
 	pub fn toggle_to_move(&mut self) {
 		*self = Self(self.0 ^ TO_MOVE_MASK);
 	}
@@ -250,6 +254,7 @@ pub struct Position {
 	pub boards: [Board; 8],
 	pub metadata: PositionMetadata,
 	pub zobrist_hash: u64,
+	pub full_move_clock: u16,
 }
 
 impl Default for Position {
@@ -272,6 +277,7 @@ impl Default for Position {
 			boards,
 			metadata,
 			zobrist_hash,
+			full_move_clock: 1,
 		}
 	}
 }
@@ -297,6 +303,7 @@ impl Position {
 			boards,
 			metadata,
 			zobrist_hash,
+			full_move_clock: 1,
 		}
 	}
 
@@ -396,6 +403,13 @@ impl Position {
 			.unwrap_or(0);
 		position.metadata.0 += moves;
 
+		// Full move clock
+		position.full_move_clock = fen_components
+			.next()
+			.map(|clock| clock.parse().ok())
+			.flatten()
+			.unwrap_or(1);
+
 		// Add the hash
 		position.zobrist_hash = hash(&position.boards, &position.metadata);
 
@@ -451,8 +465,8 @@ impl Position {
 		}
 	}
 
-	pub fn full_move_clock(&self) -> u8 {
-		todo!()
+	pub fn half_move_clock(&self) -> u8 {
+		self.metadata.half_move_clock()
 	}
 
 	pub fn is_in_check(&self, color: Color) -> bool {
@@ -531,6 +545,11 @@ impl Position {
 			metadata.increment_half_move();
 		}
 
+		let full_move_clock = match metadata.to_move() {
+			Color::White => self.full_move_clock + 1,
+			Color::Black => self.full_move_clock,
+		};
+
 		// Calculate the new hash
 		let zobrist_hash = hash_after_move(self.zobrist_hash, &self, next_move);
 
@@ -538,6 +557,7 @@ impl Position {
 			boards,
 			metadata,
 			zobrist_hash,
+			full_move_clock,
 		}
 	}
 

@@ -17,7 +17,7 @@ pub enum UciCommand {
 	SetOption { name: String, value: Option<String> },
 	Register,
 	NewGame,
-	Position(Position),
+	Position(Position, Vec<Move>),
 	Go(SearchParameters),
 	Stop,
 	Quit,
@@ -115,13 +115,15 @@ fn parse_position(
 	}
 
 	if let Some(starting_position) = position {
-		let mut after_moves_position = starting_position;
-		for m in moves {
+		let mut after_moves_position = starting_position.clone();
+		let mut parsed_moves = Vec::new();
+		for m in moves { // TODO maybe this should be handled by the engine
 			let to_apply = Move::from_uci_str(m, &after_moves_position);
 			after_moves_position = after_moves_position.apply_move(&to_apply);
+			parsed_moves.push(to_apply);
 		}
 
-		return Ok(UciCommand::Position(after_moves_position));
+		return Ok(UciCommand::Position(starting_position, parsed_moves));
 	}
 
 	return Err("No position specified in command");

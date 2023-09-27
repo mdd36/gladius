@@ -5,41 +5,51 @@ use crate::{
 	position::{moves::Move, Piece, Position},
 };
 
-use super::transposition::TranspositionTable;
-
+/// Order moves so that we search the best moves first, increasing the efficacy
+/// of alpha-beta pruning.
+/// 
+/// This ordering is stateful within a search since we want to preserve [killer
+/// moves], which are sibling nodes that have different parents in the search
+/// tree, and [hash moves], which are transposition table results from previous
+/// searches.
+/// 
+/// [killer moves]: https://www.chessprogramming.org/Killer_Heuristic
+/// [hash moves]: https://www.chessprogramming.org/Hash_Move
 pub struct MoveOrderer {
-	transposition_table: TranspositionTable,
 	killer_moves: Vec<Vec<Move>>,
+	hash_moves: Vec<Option<Move>>,
 }
 
 impl MoveOrderer {
-	pub fn new(predicted_ply: u8, transposition_table: TranspositionTable) -> Self {
+
+	/// Create a new [`MoveOrderer`]. Because it's stateful, this should only happen
+	/// once per search.
+	pub fn new(predicted_ply: u8) -> Self {
 		let killer_moves = vec![Vec::new(); predicted_ply as usize];
+		let hash_moves = vec![None; predicted_ply as usize];
 
 		Self {
-			transposition_table,
+			hash_moves,
 			killer_moves,
 		}
 	}
 
-	pub fn order(&self, position: &Position, ply: u8, moves: &mut Vec<Move>) {
-		let ply = ply as usize;
+	/// Order the moves for the current position, placing moves expected to be
+	/// good first.
+	pub fn order(&self, position: &Position, ply_from_root: u8, moves: &mut Vec<Move>) {
+		let ply_from_root = ply_from_root as usize - 1; 
 		moves.sort_unstable_by(|a, b| {
-			if self
-				.killer_moves
-				.get(ply)
-				.map_or(false, |killers| killers.contains(a))
-			{
-				return Ordering::Less;
-			}
+			match self.hash_moves.get(ply_from_root).map(Option::as_ref).flatten() {
+				Some(m) if m.eq(a) => return Ordering::Less,
+				Some(m) if m.eq(b) => return Ordering::Greater,
+				_ => (), // Nop, hashed moves can't help us order these moves.
+			};
 
-			if self
-				.killer_moves
-				.get(ply)
-				.map_or(false, |killers| killers.contains(b))
-			{
-				return Ordering::Greater;
-			}
+			match self.killer_moves.get(ply_from_root) {
+				Some(killers) if killers.contains(a) => return Ordering::Less,
+				Some(killers) if killers.contains(b) => return Ordering::Greater,
+				_ => (),
+			};
 
 			if a.flags.is_capture() && !b.flags.is_capture() {
 				return Ordering::Less;
@@ -57,21 +67,35 @@ impl MoveOrderer {
 				let b_taken = position.piece_on(b.target).unwrap_or(Piece::Pawn);
 				let b_moved = position.piece_on(b.start).unwrap();
 				// If both a and b are captures, prioritize the one with the highest static exchange,
-				// eg explore PxQ before QxP
+				// eg explore PxQ before QxP.
+				// TODO -- possibly we want to also consider recaptures so that we don't lose roughly equivalent
+				// material on a capture, eg NxB is probably bad if it opens up RxN.
 				return static_exchange(a_moved, a_taken).cmp(&static_exchange(b_moved, b_taken));
 			}
 
-			return Ordering::Equal;
+			Ordering::Equal
 		});
 	}
 
-	pub fn add_killer(&mut self, ply: u8, killer_move: Move) {
-		let ply = ply as usize;
+	/// Add a new killer at the given ply. This should happen anytime we trigger a beta cutoff.
+	pub fn add_killer(&mut self, ply_from_root: u8, killer_move: Move) {
+		let ply_from_root = ply_from_root as usize; 
 
-		if self.killer_moves.len() < ply {
-			self.killer_moves.resize(ply, Vec::new());
+		if self.killer_moves.len() <= ply_from_root {
+			self.killer_moves.resize(ply_from_root + 1, Vec::new());
 		}
 
-		self.killer_moves[ply].push(killer_move);
+		self.killer_moves[ply_from_root].push(killer_move);
+	}
+
+	// Add a new hash move
+	pub fn add_hash_move(&mut self, ply_from_root: u8, hash_move: Option<Move>) {
+		let ply_from_root = ply_from_root as usize;
+		
+		if self.hash_moves.len() <= ply_from_root {
+			self.hash_moves.resize(ply_from_root + 1, None);
+		}
+
+		self.hash_moves[ply_from_root] = hash_move;
 	}
 }

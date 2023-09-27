@@ -3,13 +3,13 @@ use crate::{
 		moves::{divide, Move, MoveDivision},
 		Position,
 	},
-	search::{self, search, transposition::TranspositionTable},
+	search::{self, search, transposition::TranspositionTable, move_ordering::MoveOrderer},
 };
 use std::{
 	sync::{
 		atomic::{AtomicBool, Ordering},
 		mpsc::Sender,
-		Arc, RwLock,
+		Arc,
 	},
 	time::Duration,
 };
@@ -25,7 +25,7 @@ pub struct SearchParameters {
 }
 
 pub trait Engine {
-	fn setup_pos(&mut self, position: Position);
+	fn setup_pos(&mut self, position: Position, move_history: Vec<Move>);
 
 	fn new_game(&mut self);
 
@@ -66,7 +66,8 @@ pub enum EngineMessage {
 
 pub struct GladiusEngine {
 	opts: EngineOpts,
-	position: Arc<RwLock<Position>>,
+	current_position: Position,
+	position_history: Vec<u64>,
 	output_channel: Sender<EngineMessage>,
 	transposition_table: TranspositionTable,
 	stop: Arc<AtomicBool>,
@@ -75,7 +76,8 @@ pub struct GladiusEngine {
 impl GladiusEngine {
 	pub fn new(opts: EngineOpts, output_channel: Sender<EngineMessage>) -> Self {
 		GladiusEngine {
-			position: Arc::new(RwLock::new(Position::default())),
+			current_position: Position::default(),
+			position_history: Vec::new(),
 			transposition_table: TranspositionTable::new(opts.table_size),
 			stop: Arc::new(AtomicBool::default()),
 			opts,
@@ -85,12 +87,19 @@ impl GladiusEngine {
 }
 
 impl Engine for GladiusEngine {
-	fn setup_pos(&mut self, position: Position) {
-		*self.position.write().unwrap() = position;
+	fn setup_pos(&mut self, starting_position: Position, move_history: Vec<Move>) {
+		self.position_history.clear();
+		self.position_history.push(starting_position.zobrist_hash);
+		self.current_position = starting_position;
+
+		for m in &move_history {
+			self.current_position = self.current_position.apply_move(m);
+			self.position_history.push(self.current_position.zobrist_hash);						
+		}
 	}
 
 	fn new_game(&mut self) {
-		self.setup_pos(Position::default());
+		self.setup_pos(Position::default(), Vec::new());
 	}
 
 	fn set_debug(&mut self, enabled: bool) {
@@ -98,11 +107,11 @@ impl Engine for GladiusEngine {
 	}
 
 	fn display(&self) -> String {
-		self.position.read().unwrap().as_display_string()
+		self.current_position.as_display_string()
 	}
 
 	fn perft(&self, depth: u8) {
-		let cloned_position = self.position.read().unwrap().clone();
+		let cloned_position = self.current_position.clone();
 		let tx = self.output_channel.clone();
 		std::thread::spawn(move || {
 			tx.send(EngineMessage::Perft(divide(cloned_position, depth)))
@@ -123,7 +132,8 @@ impl Engine for GladiusEngine {
 			return;
 		}
 
-		let starting_position = self.position.read().unwrap().clone();
+		let starting_position = self.current_position.clone();
+		let mut move_history = self.position_history.clone();
 		let stop_flag = self.stop.clone();
 		let search_tx = self.output_channel.clone();
 		let mut transposition_table = self.transposition_table.clone();
@@ -147,11 +157,14 @@ impl Engine for GladiusEngine {
 		std::thread::spawn(move || {
 			let mut depth = 1u8;
 			let mut best_move = None;
+			let mut move_orderer = MoveOrderer::new(depth_limit);
 
 			while !stop_flag.load(Ordering::Relaxed) && (infinite || depth <= depth_limit) {
 				let search_result = search::<false>(
 					&starting_position,
+					&mut move_history,
 					&mut transposition_table,
+					&mut move_orderer,
 					search::SearchParameters::new(depth),
 					stop_flag.clone(),
 				);
