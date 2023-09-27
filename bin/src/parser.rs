@@ -1,5 +1,8 @@
 use itertools::Itertools;
-use std::str::SplitAsciiWhitespace;
+use std::{
+	str::{FromStr, SplitAsciiWhitespace},
+	time::Duration,
+};
 
 use gladius_core::{
 	engine::SearchParameters,
@@ -13,7 +16,7 @@ pub enum UciCommand {
 	Debug(bool),
 	IsReady,
 	Display,
-	Peft(u8),
+	Perft(u8),
 	SetOption { name: String, value: Option<String> },
 	Register,
 	NewGame,
@@ -28,7 +31,7 @@ impl std::fmt::Debug for UciCommand {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
 			Self::Display => write!(f, "Display"),
-			Self::Peft(_) => write!(f, "Perft"),
+			Self::Perft(_) => write!(f, "Perft"),
 			Self::UCI => write!(f, "UCI"),
 			Self::Debug(_) => write!(f, "Debug"),
 			Self::IsReady => write!(f, "IsReady"),
@@ -64,7 +67,7 @@ pub fn parse_input(input: String) -> Result<UciCommand, &'static str> {
 			"perft" => {
 				let depth = split.next().ok_or("Expected a depth for perft")?;
 				let depth = depth.parse().map_err(|_| "Couldn't parse desired depth")?;
-				return Ok(UciCommand::Peft(depth));
+				return Ok(UciCommand::Perft(depth));
 			}
 			"go" => return parse_go(split),
 			_ => continue,
@@ -117,7 +120,8 @@ fn parse_position(
 	if let Some(starting_position) = position {
 		let mut after_moves_position = starting_position.clone();
 		let mut parsed_moves = Vec::new();
-		for m in moves { // TODO maybe this should be handled by the engine
+		for m in moves {
+			// TODO maybe this should be handled by the engine
 			let to_apply = Move::from_uci_str(m, &after_moves_position);
 			after_moves_position = after_moves_position.apply_move(&to_apply);
 			parsed_moves.push(to_apply);
@@ -129,6 +133,28 @@ fn parse_position(
 	return Err("No position specified in command");
 }
 
-fn parse_go(cmd: SplitAsciiWhitespace<'_>) -> Result<UciCommand, &'static str> {
-	todo!()
+fn parse_go(mut cmd: SplitAsciiWhitespace<'_>) -> Result<UciCommand, &'static str> {
+	let mut params = SearchParameters::default();
+
+	while let Some(parameter_name) = cmd.next() {
+		match parameter_name {
+			"wtime" => params.wtime = Some(parse(cmd.next())?),
+			"btime" => params.btime = Some(parse(cmd.next())?),
+			"winc" => params.winc = Some(parse(cmd.next())?),
+			"binc" => params.binc = Some(parse(cmd.next())?),
+			"depth" => params.depth = Some(parse(cmd.next())?),
+			"move_time" => params.move_time = Some(Duration::from_millis(parse(cmd.next())?)),
+			"infinite" => params.infinite = true,
+			_ => {}
+		}
+	}
+
+	Ok(UciCommand::Go(params))
+}
+
+fn parse<T: FromStr>(value: Option<&str>) -> Result<T, &'static str> {
+	value
+		.map(|v| v.parse().ok())
+		.flatten()
+		.ok_or("Failed to parse from input")
 }

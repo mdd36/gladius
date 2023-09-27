@@ -5,9 +5,7 @@ use std::{
 	sync::mpsc::{channel, Receiver, TryRecvError},
 };
 
-use gladius_core::{
-	engine::{Engine, EngineMessage, EngineOpts, GladiusEngine},
-};
+use gladius_core::engine::{Engine, EngineMessage, EngineOpts, GladiusEngine};
 use parser::{parse_input, UciCommand};
 use rustyline::{error::ReadlineError, Config, DefaultEditor};
 
@@ -127,7 +125,7 @@ fn uci_loop() {
 			UciCommand::Display => {
 				println!("{}", engine.display());
 			}
-			UciCommand::Peft(depth) => engine.perft(depth),
+			UciCommand::Perft(depth) => engine.perft(depth),
 			UciCommand::Debug(debug) => {
 				engine.set_debug(debug);
 			}

@@ -14,7 +14,10 @@ use crate::{
 	},
 };
 
-use self::{transposition::{TranspositionEntry, TranspositionTable}, move_ordering::MoveOrderer};
+use self::{
+	move_ordering::MoveOrderer,
+	transposition::{TranspositionEntry, TranspositionTable},
+};
 
 const MAX_EXTENSION_DEPTH: u8 = 16;
 const DELTA: i16 = 200; // Starting with 200 centipawns
@@ -217,11 +220,16 @@ pub fn search<const QUIESCENT: bool>(
 		let new_position = position.apply_move(&m);
 		let mut next_ply_parameters = parameters.next_ply();
 
-		if is_threefold_repetition(new_position.half_move_clock(), parameters.ply_from_root, position_history, new_position.zobrist_hash) {
+		if is_threefold_repetition(
+			new_position.half_move_clock(),
+			parameters.ply_from_root,
+			position_history,
+			new_position.zobrist_hash,
+		) {
 			return SearchResult {
 				score: 0,
 				best_move: best_move,
-			}
+			};
 		}
 
 		position_history.push(new_position.zobrist_hash);

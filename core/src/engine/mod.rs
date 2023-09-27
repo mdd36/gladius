@@ -3,7 +3,7 @@ use crate::{
 		moves::{divide, Move, MoveDivision},
 		Position,
 	},
-	search::{self, search, transposition::TranspositionTable, move_ordering::MoveOrderer},
+	search::{self, move_ordering::MoveOrderer, search, transposition::TranspositionTable},
 };
 use std::{
 	sync::{
@@ -14,14 +14,15 @@ use std::{
 	time::Duration,
 };
 
+#[derive(Default)]
 pub struct SearchParameters {
-	wtime: Option<u32>,
-	btime: Option<u32>,
-	winc: Option<u32>,
-	binc: Option<u32>,
-	depth: Option<u8>,
-	move_time: Option<Duration>,
-	infinite: Option<bool>,
+	pub wtime: Option<u32>,
+	pub btime: Option<u32>,
+	pub winc: Option<u32>,
+	pub binc: Option<u32>,
+	pub depth: Option<u8>,
+	pub move_time: Option<Duration>,
+	pub infinite: bool,
 }
 
 pub trait Engine {
@@ -94,7 +95,8 @@ impl Engine for GladiusEngine {
 
 		for m in &move_history {
 			self.current_position = self.current_position.apply_move(m);
-			self.position_history.push(self.current_position.zobrist_hash);						
+			self.position_history
+				.push(self.current_position.zobrist_hash);
 		}
 	}
 
@@ -139,7 +141,7 @@ impl Engine for GladiusEngine {
 		let mut transposition_table = self.transposition_table.clone();
 
 		let depth_limit = parameters.depth.unwrap_or(std::u8::MAX);
-		let infinite = parameters.infinite.unwrap_or(false);
+		let infinite = parameters.infinite;
 
 		// Create a task to stop the search after the time limit has elapsed.
 		// We'll only use 80% of the time as a safety margin to make sure we

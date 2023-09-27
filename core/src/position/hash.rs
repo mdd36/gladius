@@ -209,7 +209,6 @@ mod test {
 		// Captured a piece
 		let m = Move::from_uci_str("f6e4", &position);
 		running_hash = hash_after_move(running_hash, &position, &m);
-		position = position.apply_move(&m);
 		let expected_hash = hash_position(
 			&Position::from_fen("rnbqkb1r/pppppppp/8/8/4n3/8/PPPPKPPP/RNBQ1BNR w kq - 0 1")
 				.unwrap(),

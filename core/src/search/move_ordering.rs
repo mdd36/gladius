@@ -7,12 +7,12 @@ use crate::{
 
 /// Order moves so that we search the best moves first, increasing the efficacy
 /// of alpha-beta pruning.
-/// 
+///
 /// This ordering is stateful within a search since we want to preserve [killer
 /// moves], which are sibling nodes that have different parents in the search
 /// tree, and [hash moves], which are transposition table results from previous
 /// searches.
-/// 
+///
 /// [killer moves]: https://www.chessprogramming.org/Killer_Heuristic
 /// [hash moves]: https://www.chessprogramming.org/Hash_Move
 pub struct MoveOrderer {
@@ -21,7 +21,6 @@ pub struct MoveOrderer {
 }
 
 impl MoveOrderer {
-
 	/// Create a new [`MoveOrderer`]. Because it's stateful, this should only happen
 	/// once per search.
 	pub fn new(predicted_ply: u8) -> Self {
@@ -37,9 +36,14 @@ impl MoveOrderer {
 	/// Order the moves for the current position, placing moves expected to be
 	/// good first.
 	pub fn order(&self, position: &Position, ply_from_root: u8, moves: &mut Vec<Move>) {
-		let ply_from_root = ply_from_root as usize - 1; 
+		let ply_from_root = ply_from_root as usize - 1;
 		moves.sort_unstable_by(|a, b| {
-			match self.hash_moves.get(ply_from_root).map(Option::as_ref).flatten() {
+			match self
+				.hash_moves
+				.get(ply_from_root)
+				.map(Option::as_ref)
+				.flatten()
+			{
 				Some(m) if m.eq(a) => return Ordering::Less,
 				Some(m) if m.eq(b) => return Ordering::Greater,
 				_ => (), // Nop, hashed moves can't help us order these moves.
@@ -79,7 +83,7 @@ impl MoveOrderer {
 
 	/// Add a new killer at the given ply. This should happen anytime we trigger a beta cutoff.
 	pub fn add_killer(&mut self, ply_from_root: u8, killer_move: Move) {
-		let ply_from_root = ply_from_root as usize; 
+		let ply_from_root = ply_from_root as usize;
 
 		if self.killer_moves.len() <= ply_from_root {
 			self.killer_moves.resize(ply_from_root + 1, Vec::new());
@@ -91,7 +95,7 @@ impl MoveOrderer {
 	// Add a new hash move
 	pub fn add_hash_move(&mut self, ply_from_root: u8, hash_move: Option<Move>) {
 		let ply_from_root = ply_from_root as usize;
-		
+
 		if self.hash_moves.len() <= ply_from_root {
 			self.hash_moves.resize(ply_from_root + 1, None);
 		}
