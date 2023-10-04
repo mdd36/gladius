@@ -5,16 +5,9 @@ edition = "2021"
 authors = [ "Matthew Dickson hi@mattdickson.io"]
 
 [dependencies]
-ahash = "0.8"
 rand = { version = "0.8", features = [ "small_rng" ] }
 lazy_static = "1.4"
 
 [dev-dependencies]
 indoc = "2.0"
 pretty_assertions = "1.4"
-
-[profile.dev]
-overflow-checks = false
-
-[profile.release]
-debug = true
