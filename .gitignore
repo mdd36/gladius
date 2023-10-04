@@ -4,6 +4,7 @@ Cargo.lock
 # Build artifacts
 target
 magic_finder
+magic_transformer.py
 rook_magics.json
 bishop_magics.json
 
