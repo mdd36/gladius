@@ -3,3 +3,6 @@ members = [
   "core",
   "bin"
 ]
+
+[profile.release]
+debug = true

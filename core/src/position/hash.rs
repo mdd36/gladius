@@ -115,7 +115,9 @@ pub fn hash_after_move(old: u64, starting_position: &Position, to_apply: &Move) 
 			+ capture_square.lsb_index();
 		hash ^= ZOBRIST_RANDOMS[captured_piece_square_index];
 	} else if to_apply.flags.is_capture() {
-		let captured_piece = starting_position.piece_on(to_apply.target).unwrap();
+		let captured_piece = starting_position
+			.piece_on(to_apply.target)
+			.unwrap_or(Piece::Pawn);
 		let captured_piece_square_index = (1 - to_move as usize) * (6 * 64)
 			+ (captured_piece as usize - 2) * 64
 			+ to_apply.target.lsb_index();

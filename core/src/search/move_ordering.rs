@@ -1,105 +1,174 @@
-use std::cmp::Ordering;
+use std::collections::HashMap;
 
 use crate::{
-	eval::material::static_exchange,
-	position::{moves::Move, Piece, Position},
+	eval::material::value_of_piece,
+	position::{attacks, board::Board, moves::Move, Piece, Position},
 };
 
-/// Order moves so that we search the best moves first, increasing the efficacy
-/// of alpha-beta pruning.
-///
-/// This ordering is stateful within a search since we want to preserve [killer
-/// moves], which are sibling nodes that have different parents in the search
-/// tree, and [hash moves], which are transposition table results from previous
-/// searches.
-///
-/// [killer moves]: https://www.chessprogramming.org/Killer_Heuristic
-/// [hash moves]: https://www.chessprogramming.org/Hash_Move
-pub struct MoveOrderer {
-	killer_moves: Vec<Vec<Move>>,
-	hash_moves: Vec<Option<Move>>,
+#[derive(Default)]
+pub struct KillerTable(HashMap<u8, Vec<Move>>);
+
+impl KillerTable {
+	pub fn get(&self, ply: u8) -> Option<Vec<Move>> {
+		self.0.get(&ply).map(|moves| moves.to_owned())
+	}
+
+	pub fn insert(&mut self, ply: u8, mov: Move) {
+		self.0
+			.entry(ply)
+			.and_modify(|current_entries| {
+				if current_entries.contains(&mov) {
+					return;
+				}
+				current_entries[1] = current_entries[0];
+				current_entries[0] = mov;
+			})
+			// Doubling up to let us assume that the array is always length 2
+			// in the and_modify closure. Trying a single extra move isn't
+			// penalizing enough to worry, especially since the killer will
+			// hopefully trigger a beta cutoff anyway
+			.or_insert(vec![mov, mov]);
+	}
 }
 
-impl MoveOrderer {
-	/// Create a new [`MoveOrderer`]. Because it's stateful, this should only happen
-	/// once per search.
-	pub fn new(predicted_ply: u8) -> Self {
-		let killer_moves = vec![Vec::new(); predicted_ply as usize];
-		let hash_moves = vec![None; predicted_ply as usize];
+pub struct ScoredMove {
+	pub mov: Move,
+	pub score: i16,
+}
 
+enum MovePhase {
+	Hash(Option<Move>),
+	Capture(Vec<ScoredMove>),
+	All(Vec<ScoredMove>),
+}
+
+pub struct MoveIterator<'a> {
+	index: usize,
+	all_moves: Vec<Move>,
+	phase: MovePhase,
+	position: &'a Position,
+	killers: Option<Vec<Move>>,
+	defense: Board,
+}
+
+impl<'a> MoveIterator<'a> {
+	pub fn new(
+		all_moves: Vec<Move>,
+		position: &'a Position,
+		hash_move: Option<Move>,
+		killers: Option<Vec<Move>>,
+	) -> Self {
+		let hash_move = hash_move.filter(|hm| all_moves.contains(hm));
 		Self {
-			hash_moves,
-			killer_moves,
+			index: 0,
+			all_moves,
+			phase: MovePhase::Hash(hash_move),
+			position,
+			killers,
+			defense: attacks::get_attacked_squares(position, !position.metadata.to_move()),
 		}
 	}
 
-	/// Order the moves for the current position, placing moves expected to be
-	/// good first.
-	pub fn order(&self, position: &Position, ply_from_root: u8, moves: &mut Vec<Move>) {
-		let ply_from_root = ply_from_root as usize - 1;
-		moves.sort_unstable_by(|a, b| {
-			match self
-				.hash_moves
-				.get(ply_from_root)
-				.map(Option::as_ref)
-				.flatten()
-			{
-				Some(m) if m.eq(a) => return Ordering::Less,
-				Some(m) if m.eq(b) => return Ordering::Greater,
-				_ => (), // Nop, hashed moves can't help us order these moves.
-			};
-
-			match self.killer_moves.get(ply_from_root) {
-				Some(killers) if killers.contains(a) => return Ordering::Less,
-				Some(killers) if killers.contains(b) => return Ordering::Greater,
-				_ => (),
-			};
-
-			if a.flags.is_capture() && !b.flags.is_capture() {
-				return Ordering::Less;
-			}
-
-			if !a.flags.is_capture() && b.flags.is_capture() {
-				return Ordering::Greater;
-			}
-
-			if a.flags.is_capture() && b.flags.is_capture() {
-				// If the option is empty, it means the capture was an en passant so we captured a pawn.
-				// All other captures end on the same space as the taken piece.
-				let a_taken = position.piece_on(a.target).unwrap_or(Piece::Pawn);
-				let a_moved = position.piece_on(a.start).unwrap();
-				let b_taken = position.piece_on(b.target).unwrap_or(Piece::Pawn);
-				let b_moved = position.piece_on(b.start).unwrap();
-				// If both a and b are captures, prioritize the one with the highest static exchange,
-				// eg explore PxQ before QxP.
-				// TODO -- possibly we want to also consider recaptures so that we don't lose roughly equivalent
-				// material on a capture, eg NxB is probably bad if it opens up RxN.
-				return static_exchange(a_moved, a_taken).cmp(&static_exchange(b_moved, b_taken));
-			}
-
-			Ordering::Equal
-		});
+	fn score_all(&self, constraint: impl Fn(&Move) -> bool) -> Vec<ScoredMove> {
+		self.all_moves
+			.iter()
+			.filter(|m| constraint(m))
+			.map(|m| ScoredMove {
+				mov: m.to_owned(),
+				score: self.score(m),
+			})
+			.collect()
 	}
 
-	/// Add a new killer at the given ply. This should happen anytime we trigger a beta cutoff.
-	pub fn add_killer(&mut self, ply_from_root: u8, killer_move: Move) {
-		let ply_from_root = ply_from_root as usize;
+	fn score(&self, mov: &Move) -> i16 {
+		let mut score = 0;
 
-		if self.killer_moves.len() <= ply_from_root {
-			self.killer_moves.resize(ply_from_root + 1, Vec::new());
+		if mov.flags.is_capture() {
+			let attacker = self.position.piece_on(mov.start).unwrap();
+			let attacker_value = value_of_piece(attacker);
+			let victim = self.position.piece_on(mov.target).unwrap_or(Piece::Pawn); // En passant edge case
+			let victim_value = value_of_piece(victim);
+			let material_delta = victim_value - attacker_value;
+
+			score += material_delta;
+
+			// I'm pretty sure this doesn't work cause the square is currently occupied by
+			// a piece of the defender's color, and hence the generated attack map won't include
+			// it (also, we might be still attacked by a sliding piece if we moved along its sliding
+			// direction, and that's also not accounted for). I'd need to generate this map on the fly
+			// each time and idk if that's wise.
+			let is_defended = self.defense.is_occupied(mov.target);
+
+			if is_defended && material_delta < 0 {
+				score -= value_of_piece(Piece::Rook);
+			} else {
+				score += value_of_piece(Piece::Queen);
+			}
+		} else {
+			match &self.killers {
+				Some(killers) if killers.contains(mov) => score += value_of_piece(Piece::Queen),
+				_ => {}
+			}
 		}
 
-		self.killer_moves[ply_from_root].push(killer_move);
+		if mov.flags.is_promotion() {
+			score += value_of_piece(Piece::Queen);
+		}
+
+		score
+	}
+}
+
+fn selection_sort_single(moves: &mut Vec<ScoredMove>, index: usize) -> Option<Move> {
+	if index >= moves.len() {
+		return None;
 	}
 
-	// Add a new hash move
-	pub fn add_hash_move(&mut self, ply_from_root: u8, hash_move: Option<Move>) {
-		let ply_from_root = ply_from_root as usize;
-
-		if self.hash_moves.len() <= ply_from_root {
-			self.hash_moves.resize(ply_from_root + 1, None);
+	let mut best_score = std::i16::MIN;
+	let mut best_index = index;
+	for i in index..moves.len() {
+		let move_score = moves[i].score;
+		if move_score > best_score {
+			best_score = move_score;
+			best_index = i;
 		}
+	}
 
-		self.hash_moves[ply_from_root] = hash_move;
+	moves.swap(index, best_index);
+	let to_play = moves[index].mov;
+
+	Some(to_play)
+}
+
+impl<'a> Iterator for MoveIterator<'a> {
+	type Item = Move;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		match &mut self.phase {
+			MovePhase::Hash(Some(hash_move)) => {
+				let to_play = hash_move.to_owned();
+				self.phase = MovePhase::Capture(self.score_all(|m| m.flags.is_capture()));
+				Some(to_play)
+			}
+			MovePhase::Hash(None) => {
+				self.phase = MovePhase::Capture(self.score_all(|m| m.flags.is_capture()));
+				self.next()
+			}
+			MovePhase::Capture(capture_moves) => {
+				if let Some(to_play) = selection_sort_single(capture_moves, self.index) {
+					self.index += 1;
+					Some(to_play)
+				} else {
+					self.index = 0;
+					self.phase = MovePhase::All(self.score_all(|m| !m.flags.is_capture()));
+					self.next()
+				}
+			}
+			MovePhase::All(moves) => {
+				let to_play = selection_sort_single(moves, self.index);
+				self.index += 1;
+				to_play
+			}
+		}
 	}
 }

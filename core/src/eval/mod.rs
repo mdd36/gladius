@@ -1,10 +1,8 @@
-mod attacks;
 pub mod material;
 pub mod positioning;
 pub mod repetition;
 
 use self::{
-	attacks::attacks_score,
 	material::material_score,
 	positioning::{king_safety, pawn_structure, positioning_score},
 };
@@ -12,6 +10,10 @@ use crate::position::{Piece, Position};
 
 const PHASE_WEIGHTS: [u32; 7] = [0, 0, 0, 2, 1, 1, 4];
 const TOTAL_PHASE: f64 = 24.0;
+
+pub const MAX_SCORE: i16 = std::i16::MAX;
+pub const MIN_SCORE: i16 = std::i16::MIN + 1; // To account for 2's complement
+pub const CHECKMATE_SCORE: i16 = MIN_SCORE + std::u8::MAX as i16;
 
 pub fn evaluate_position(position: &Position) -> i16 {
 	let us = position.metadata.to_move();
@@ -33,15 +35,15 @@ pub fn evaluate_position(position: &Position) -> i16 {
 	let their_king_safety = king_safety(position, them);
 	let king_safety_difference = our_king_safety - their_king_safety;
 
-	let our_attacks = attacks_score(position, us);
-	let their_attacks = attacks_score(position, them);
-	let attack_difference = our_attacks - their_attacks;
+	// let our_attacks = attacks_score(position, us);
+	// let their_attacks = attacks_score(position, them);
+	// let attack_difference = our_attacks - their_attacks;
 
 	material_difference
 		+ positioning_difference
 		+ pawn_structure_difference
 		+ king_safety_difference
-		+ attack_difference
+	// + attack_difference
 }
 
 /// Get a float that represents the current phase of the game based

@@ -8,7 +8,7 @@ pub fn is_threefold_repetition(
 	move_history: &Vec<u64>,
 	new_position: u64,
 ) -> bool {
-	if ply_from_irreversible > 4 {
+	if ply_from_irreversible > 5 {
 		let start = move_history.len() - ply_from_irreversible as usize;
 		let repetition_count = move_history[start..]
 			.iter()
@@ -17,7 +17,7 @@ pub fn is_threefold_repetition(
 		// Either we've found a definite 3 fold repetition, or we're guessing that
 		// we'd find one a little further along and are stopping early to speed
 		// up the search.
-		repetition_count == 2 || (repetition_count == 1 && ply_from_root > 3)
+		repetition_count == 3 || (repetition_count == 2 && ply_from_root > 4)
 	} else {
 		false
 	}

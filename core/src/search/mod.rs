@@ -7,7 +7,10 @@ use std::sync::{
 };
 
 use crate::{
-	eval::{evaluate_position, repetition::is_threefold_repetition},
+	eval::{
+		evaluate_position, repetition::is_threefold_repetition, CHECKMATE_SCORE, MAX_SCORE,
+		MIN_SCORE,
+	},
 	position::{
 		moves::{generate_moves, Move},
 		Color, Piece, Position,
@@ -15,11 +18,11 @@ use crate::{
 };
 
 use self::{
-	move_ordering::MoveOrderer,
+	move_ordering::{KillerTable, MoveIterator},
 	transposition::{TranspositionEntry, TranspositionTable},
 };
 
-const MAX_EXTENSION_DEPTH: u8 = 16;
+const MAX_EXTENSION_DEPTH: u8 = 4;
 const DELTA: i16 = 200; // Starting with 200 centipawns
 
 /// Because we're thinning our move search space using [alpha-beta pruning],
@@ -28,20 +31,19 @@ const DELTA: i16 = 200; // Starting with 200 centipawns
 /// [alpha-beta pruning]: https://www.chessprogramming.org/Alpha-Beta
 #[derive(Copy, Clone)]
 pub enum Score {
-	/// 've explored all options and determined an exact score.
+	/// We've explored all options and determined an exact score.
 	/// The first node we explore will yield and exact score since there's no
 	/// other values to compare its score against for pruning.
 	Exact(i16),
 
 	/// A Cut Node where we short circuit because a move is too good for us. We
 	/// assume that our opponent isn't dumb, and wouldn't let us get here if they
-	/// had a chance to avoid it earlier in the search tree.
+	/// had a chance to avoid it earlier in the search tree (beta cutoff).
 	LowerBound(i16),
 
-	/// An All Node where we short circuited due to too low of a score. This is
-	/// where we've found an enemy response to one of our moves that's already
-	/// better than any response to a different move, so it no longer makes sense
-	/// to explore this line since we should play the other move instead.
+	/// An All Node occurs when we lack improvement over alpha, so it no
+	/// longer makes sense to explore this line since we should play the
+	/// the move currently associated with alpha.
 	UpperBound(i16),
 }
 
@@ -70,8 +72,8 @@ impl SearchParameters {
 			ply: max_depth,
 			ply_from_root: 0,
 			extensions: 0,
-			alpha: std::i16::MIN,
-			beta: std::i16::MAX,
+			alpha: MIN_SCORE,
+			beta: MAX_SCORE,
 			quiescent: false,
 		}
 	}
@@ -94,7 +96,7 @@ impl SearchParameters {
 
 	pub fn quiescent(&self) -> Self {
 		Self {
-			ply: self.ply_from_root / 2, // Half as deep as our original search
+			ply: std::u8::MAX,
 			ply_from_root: self.ply_from_root + 1,
 			extensions: self.extensions,
 			alpha: -self.beta,
@@ -107,6 +109,7 @@ impl SearchParameters {
 pub struct SearchResult {
 	pub score: i16,
 	pub best_move: Option<Move>,
+	pub nodes_explored: u64,
 }
 
 impl From<TranspositionEntry> for SearchResult {
@@ -114,6 +117,7 @@ impl From<TranspositionEntry> for SearchResult {
 		Self {
 			score: value.score.inner(),
 			best_move: Some(value.best_move),
+			nodes_explored: 1,
 		}
 	}
 }
@@ -122,35 +126,28 @@ pub fn search<const QUIESCENT: bool>(
 	position: &Position,
 	position_history: &mut Vec<u64>,
 	transposition_table: &mut TranspositionTable,
-	move_orderer: &mut MoveOrderer,
+	killers_table: &mut KillerTable,
 	mut parameters: SearchParameters,
 	stop: Arc<AtomicBool>,
 ) -> SearchResult {
 	let mut best_score = Score::UpperBound(parameters.alpha);
 	let saved_position = transposition_table.get(position.zobrist_hash);
 	let mut best_move = match saved_position {
-		Some(entry) if entry.key == position.zobrist_hash => Some(entry.best_move),
+		Some(entry) => Some(entry.best_move),
 		_ => None,
 	};
 
-	move_orderer.add_hash_move(parameters.ply_from_root, best_move);
-
-	if QUIESCENT && parameters.ply == 0 {
+	if is_threefold_repetition(
+		position.half_move_clock(),
+		parameters.ply_from_root,
+		position_history,
+		position.zobrist_hash,
+	) {
 		return SearchResult {
-			score: parameters.alpha,
-			best_move,
+			score: 0,
+			best_move: best_move,
+			nodes_explored: 1,
 		};
-	}
-
-	if parameters.ply == 0 {
-		return search::<true>(
-			position,
-			position_history,
-			transposition_table,
-			move_orderer,
-			parameters.quiescent(),
-			stop.clone(),
-		);
 	}
 
 	if QUIESCENT {
@@ -159,17 +156,19 @@ pub fn search<const QUIESCENT: bool>(
 			return SearchResult {
 				score: parameters.beta,
 				best_move,
+				nodes_explored: 1,
 			};
 		}
 
 		// This move might gain us something, but not enough to justify
-		// looking further down its line. We could also be losing down
+		// looking further down this line. We could also be losing down
 		// this line, which definitely means we should abandon it!
 		// TODO: Turn this off when we get to the endgame
-		if current_score < parameters.alpha + DELTA {
+		if current_score < parameters.alpha.saturating_sub(DELTA) {
 			return SearchResult {
 				score: parameters.alpha,
 				best_move,
+				nodes_explored: 1,
 			};
 		}
 
@@ -178,60 +177,74 @@ pub fn search<const QUIESCENT: bool>(
 		}
 	}
 
+	if QUIESCENT && parameters.ply == 0 {
+		return SearchResult {
+			score: parameters.alpha,
+			best_move,
+			nodes_explored: 1,
+		};
+	}
+
+	if parameters.ply == 0 {
+		return search::<true>(
+			position,
+			position_history,
+			transposition_table,
+			killers_table,
+			parameters.quiescent(),
+			stop.clone(),
+		);
+	}
+
 	if let Some(entry) = saved_position {
 		if entry.depth >= parameters.ply {
 			return SearchResult::from(entry);
 		}
 	};
 
-	let mut possible_moves = generate_moves::<QUIESCENT>(position);
+	let possible_moves = generate_moves::<QUIESCENT>(position);
 
 	if QUIESCENT && possible_moves.is_empty() {
 		return SearchResult {
 			score: parameters.alpha,
 			best_move,
+			nodes_explored: 1,
 		};
 	}
 
 	if possible_moves.is_empty() {
 		if position.is_in_check(position.metadata.to_move()) {
 			return SearchResult {
-				score: std::i16::MIN + parameters.ply_from_root as i16,
+				score: CHECKMATE_SCORE + parameters.ply_from_root as i16,
 				best_move,
+				nodes_explored: 1,
 			};
 		} else {
 			return SearchResult {
 				score: 0,
 				best_move,
+				nodes_explored: 1,
 			};
 		}
 	}
 
-	move_orderer.order(position, parameters.ply_from_root, &mut possible_moves);
-
-	for m in possible_moves {
+	let mut nodes_explored = 0;
+	for m in MoveIterator::new(
+		possible_moves,
+		position,
+		best_move,
+		killers_table.get(parameters.ply),
+	) {
 		if stop.load(Ordering::Relaxed) {
 			return SearchResult {
 				score: best_score.inner(),
 				best_move,
+				nodes_explored,
 			};
 		}
 
 		let new_position = position.apply_move(&m);
 		let mut next_ply_parameters = parameters.next_ply();
-
-		if is_threefold_repetition(
-			new_position.half_move_clock(),
-			parameters.ply_from_root,
-			position_history,
-			new_position.zobrist_hash,
-		) {
-			return SearchResult {
-				score: 0,
-				best_move: best_move,
-			};
-		}
-
 		position_history.push(new_position.zobrist_hash);
 
 		if !QUIESCENT {
@@ -239,15 +252,16 @@ pub fn search<const QUIESCENT: bool>(
 			next_ply_parameters.add_extension(extensions);
 		}
 
-		let score = -search::<QUIESCENT>(
+		let search_result = search::<QUIESCENT>(
 			&new_position,
 			position_history,
 			transposition_table,
-			move_orderer,
+			killers_table,
 			next_ply_parameters,
 			stop.clone(),
-		)
-		.score;
+		);
+
+		let score = -search_result.score;
 
 		position_history.pop();
 
@@ -256,10 +270,15 @@ pub fn search<const QUIESCENT: bool>(
 			let table_entry =
 				TranspositionEntry::from(position, m, Score::LowerBound(score), parameters.ply);
 			transposition_table.insert(table_entry);
-			move_orderer.add_killer(parameters.ply_from_root, m);
+
+			if !m.flags.is_capture() {
+				killers_table.insert(parameters.ply_from_root, m);
+			}
+
 			return SearchResult {
 				score,
 				best_move: Some(m),
+				nodes_explored: nodes_explored + 1,
 			};
 		}
 
@@ -269,16 +288,21 @@ pub fn search<const QUIESCENT: bool>(
 			best_score = Score::Exact(score);
 			best_move = Some(m);
 		}
+
+		nodes_explored += search_result.nodes_explored;
 	}
 
-	if let Some(m) = best_move {
-		let table_entry = TranspositionEntry::from(position, m, best_score, parameters.ply);
-		transposition_table.insert(table_entry);
+	if !QUIESCENT {
+		if let Some(m) = best_move {
+			let table_entry = TranspositionEntry::from(position, m, best_score, parameters.ply);
+			transposition_table.insert(table_entry);
+		}
 	}
 
 	SearchResult {
 		score: best_score.inner(),
 		best_move,
+		nodes_explored,
 	}
 }
 
@@ -293,10 +317,6 @@ fn extensions(num_extensions: u8, position: &Position, move_taken: &Move) -> u8 
 	}
 
 	if position.is_in_check(Color::White) || position.is_in_check(Color::Black) {
-		extension += 1;
-	}
-
-	if move_taken.flags.is_capture() {
 		extension += 1;
 	}
 

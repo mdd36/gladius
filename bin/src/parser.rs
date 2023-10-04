@@ -5,7 +5,7 @@ use std::{
 };
 
 use gladius_core::{
-	engine::SearchParameters,
+	engine::{EngineOption, SearchParameters},
 	position::{moves::Move, Position},
 };
 
@@ -17,7 +17,7 @@ pub enum UciCommand {
 	IsReady,
 	Display,
 	Perft(u8),
-	SetOption { name: String, value: Option<String> },
+	SetOption(EngineOption),
 	Register,
 	NewGame,
 	Position(Position, Vec<Move>),
@@ -64,17 +64,14 @@ pub fn parse_input(input: String) -> Result<UciCommand, &'static str> {
 			"register" => return Ok(UciCommand::Register),
 			"help" => return Ok(UciCommand::Help),
 			"d" | "display" => return Ok(UciCommand::Display),
-			"perft" => {
-				let depth = split.next().ok_or("Expected a depth for perft")?;
-				let depth = depth.parse().map_err(|_| "Couldn't parse desired depth")?;
-				return Ok(UciCommand::Perft(depth));
-			}
+			"perft" => return Ok(UciCommand::Perft(parse(split.next())?)),
 			"go" => return parse_go(split),
+			"setoption" => return parse_setopt(split),
 			_ => continue,
 		}
 	}
 
-	Err(r#"Unknown command. For help, enter "help"."#)
+	Err(r#"unknown command. For help, enter "help""#)
 }
 
 fn parse_position(
@@ -143,7 +140,7 @@ fn parse_go(mut cmd: SplitAsciiWhitespace<'_>) -> Result<UciCommand, &'static st
 			"winc" => params.winc = Some(parse(cmd.next())?),
 			"binc" => params.binc = Some(parse(cmd.next())?),
 			"depth" => params.depth = Some(parse(cmd.next())?),
-			"move_time" => params.move_time = Some(Duration::from_millis(parse(cmd.next())?)),
+			"movetime" => params.move_time = Some(Duration::from_millis(parse(cmd.next())?)),
 			"infinite" => params.infinite = true,
 			_ => {}
 		}
@@ -152,9 +149,41 @@ fn parse_go(mut cmd: SplitAsciiWhitespace<'_>) -> Result<UciCommand, &'static st
 	Ok(UciCommand::Go(params))
 }
 
+fn parse_setopt(mut cmd: SplitAsciiWhitespace<'_>) -> Result<UciCommand, &'static str> {
+	let mut name = None;
+	let mut value = None;
+	while let Some(word) = cmd.next() {
+		match word {
+			"name" => name = cmd.next(),
+			"value" => value = cmd.next(),
+			_ => {}
+		}
+	}
+
+	let (name, value) = match (name, value) {
+		(Some(n), Some(v)) => (n, v),
+		_ => return Err("missing name or value"),
+	};
+
+	let option = match name {
+		"UCI_AnalyseMode" | "UCI_AnalyzeMode" => {
+			EngineOption::AnalyzeMode(value.eq_ignore_ascii_case("true"))
+		}
+		"Hash" => {
+			let size = value
+				.parse()
+				.map_err(|_| "specified table size isn't an integer")?;
+			EngineOption::TableSize(size)
+		}
+		_ => return Err("unsupported option"),
+	};
+
+	Ok(UciCommand::SetOption(option))
+}
+
 fn parse<T: FromStr>(value: Option<&str>) -> Result<T, &'static str> {
 	value
 		.map(|v| v.parse().ok())
 		.flatten()
-		.ok_or("Failed to parse from input")
+		.ok_or("failed to parse from input")
 }

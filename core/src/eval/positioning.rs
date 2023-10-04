@@ -115,7 +115,7 @@ const ISOLATED_PAWN_PENALTY_END_GAME: [i16; 8] = [
 /// number of attackers of the king's zone
 #[rustfmt::skip]
 const KING_ATTACK_WEIGHTS: [i16; 8] = [
-	0, 0, -1, -2, -5, -10, -50, -100
+	0, 0, -10, -20, -50, -100, -500, -1000
 ];
 
 lazy_static::lazy_static!(
@@ -228,12 +228,12 @@ pub fn king_safety(position: &Position, color: Color) -> i16 {
 	let us = position.get_board_for_color(color);
 	let king_square = Square::from(us & position.get_board_for_piece(Piece::King));
 
-	let king_zone = us.as_u64() ^ KING_ATTACKS[king_square.lsb_index()];
+	let king_zone = KING_ATTACKS[king_square.lsb_index()];
 	let attacked_squares = attacks::get_attacked_squares(position, !color);
-	let num_attacks = (attacked_squares & king_square).count_ones();
+	let king_zone_attack_count = (attacked_squares & king_zone).count_ones();
 
-	let ratio_attacked = king_zone.count_ones() as f64 / num_attacks as f64;
-	let penalty_index = (8.0 * ratio_attacked) as usize;
+	let ratio_attacked = (king_zone_attack_count as f64) / (king_zone.count_ones() as f64);
+	let weight_index = ((KING_ATTACK_WEIGHTS.len() - 1) as f64 * ratio_attacked).round() as usize;
 
-	KING_ATTACK_WEIGHTS[penalty_index]
+	KING_ATTACK_WEIGHTS[weight_index]
 }

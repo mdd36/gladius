@@ -204,7 +204,7 @@ impl PositionMetadata {
 	}
 
 	pub fn half_move_clock(&self) -> u8 {
-		(self.0 * HALF_CLOCK_MASK) as u8
+		(self.0 & HALF_CLOCK_MASK) as u8
 	}
 
 	pub fn toggle_to_move(&mut self) {

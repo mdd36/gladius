@@ -5,7 +5,9 @@ use std::{
 	sync::mpsc::{channel, Receiver, TryRecvError},
 };
 
-use gladius_core::engine::{Engine, EngineMessage, EngineOpts, GladiusEngine};
+use gladius_core::engine::{
+	AnalysisData, Engine, EngineMessage, EngineOption, EngineOpts, GladiusEngine,
+};
 use parser::{parse_input, UciCommand};
 use rustyline::{error::ReadlineError, Config, DefaultEditor};
 
@@ -87,8 +89,12 @@ fn uci_loop() {
 			Ok(EngineMessage::ReadyOk) => println!("readyok"),
 			Ok(EngineMessage::Perft(move_division)) => println!("{move_division}"),
 			Ok(EngineMessage::BestMove(bm)) => println!("bestmove {bm}"),
+			Ok(EngineMessage::Info(msg)) => println!("info string {msg}"),
 			Ok(EngineMessage::Error(msg)) => eprintln!("error {msg}"),
-			_ => {}
+			Ok(EngineMessage::AnalysisData(data)) => {
+				println!("info string {}", data.to_uci_string())
+			}
+			Err(_) => {}
 		};
 
 		let line = match stdin_rx.try_recv() {
@@ -103,7 +109,7 @@ fn uci_loop() {
 		let result = match parse_input(line) {
 			Ok(cmd) => cmd,
 			Err(str) => {
-				println!("{str}");
+				eprintln!("error {str}");
 				continue;
 			}
 		};
@@ -127,13 +133,13 @@ fn uci_loop() {
 			}
 			UciCommand::Perft(depth) => engine.perft(depth),
 			UciCommand::Debug(debug) => {
-				engine.set_debug(debug);
+				engine.set_opt(EngineOption::Debug(debug));
 			}
 			UciCommand::IsReady => {
 				engine.ready();
 			}
-			UciCommand::SetOption { name, value } => {
-				// TODO
+			UciCommand::SetOption(option) => {
+				engine.set_opt(option);
 			}
 			UciCommand::Go(parameters) => {
 				engine.go(parameters);
@@ -143,7 +149,7 @@ fn uci_loop() {
 			}
 			UciCommand::Register => println!("registration ok"),
 			UciCommand::Help => println!("{HELP_DIALOG}"),
-			UciCommand::Quit => return,
+			UciCommand::Quit => exit(0),
 		}
 	}
 }
@@ -165,4 +171,22 @@ fn stdin_channel() -> Receiver<String> {
 		tx.send(line).unwrap();
 	});
 	rx
+}
+
+trait ToUciString {
+	fn to_uci_string(&self) -> String;
+}
+
+impl ToUciString for AnalysisData {
+	fn to_uci_string(&self) -> String {
+		format!(
+			"score cp {:.1} depth {} time {} pv {} nodes {} nps {:.2}",
+			self.score as f64 / 100.0,
+			self.depth,
+			self.time.as_millis(),
+			self.best_move,
+			self.nodes,
+			(self.nodes as f64 / self.time.as_millis() as f64) * 1000.0
+		)
+	}
 }
