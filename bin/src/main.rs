@@ -118,6 +118,10 @@ fn uci_loop() {
 			UciCommand::UCI => {
 				println!("id name Gladius");
 				println!("id author Matthew Dickson");
+
+				EngineOption::iter()
+					.for_each(|option| println!("option {}", option.to_uci_string()));
+
 				println!("uciok");
 			}
 			UciCommand::NewGame => {
@@ -188,5 +192,18 @@ impl ToUciString for AnalysisData {
 			self.nodes,
 			(self.nodes as f64 / self.time.as_millis() as f64) * 1000.0
 		)
+	}
+}
+
+impl ToUciString for EngineOption {
+	fn to_uci_string(&self) -> String {
+		match self {
+			Self::AnalyzeMode(_) => "name UCI_AnalyseMode type check default false",
+			Self::TableSize(_) => "name Hash type spin min 0 max 512 default 4",
+			Self::MoveOverhead(_) => "name Move Overhead type spin min 0 default 0",
+			Self::Threads(_) => "name Threads type spin min 1 max 4 default 4",
+			Self::Debug(_) => "name Debug type check default false",
+		}
+		.to_owned()
 	}
 }

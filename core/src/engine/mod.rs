@@ -48,6 +48,20 @@ pub enum EngineOption {
 	Debug(bool),
 	TableSize(usize),
 	AnalyzeMode(bool),
+	MoveOverhead(Duration),
+	Threads(u8),
+}
+
+impl EngineOption {
+	pub fn iter() -> impl Iterator<Item = Self> {
+		[
+			Self::TableSize(4),
+			Self::AnalyzeMode(false),
+			Self::MoveOverhead(Duration::ZERO),
+			Self::Threads(4),
+		]
+		.into_iter()
+	}
 }
 
 /// Various flags and values that affect engine behavior.
@@ -55,6 +69,8 @@ pub struct EngineOpts {
 	pub debug: bool,
 	pub table_size: usize,
 	pub analyze_mode: bool,
+	pub move_overhead: Duration,
+	pub threads: u8,
 }
 
 impl Default for EngineOpts {
@@ -63,6 +79,8 @@ impl Default for EngineOpts {
 			debug: false,
 			table_size: 4, // MB
 			analyze_mode: false,
+			threads: 4,
+			move_overhead: Duration::ZERO,
 		}
 	}
 }
@@ -280,6 +298,8 @@ impl Engine for GladiusEngine {
 				self.transposition_table.resize(size);
 			}
 			EngineOption::AnalyzeMode(is_enabled) => self.opts.analyze_mode = is_enabled,
+			EngineOption::MoveOverhead(overhead) => self.opts.move_overhead = overhead,
+			EngineOption::Threads(count) => self.opts.threads = count,
 		}
 	}
 }

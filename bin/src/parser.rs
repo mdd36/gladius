@@ -154,7 +154,15 @@ fn parse_setopt(mut cmd: SplitAsciiWhitespace<'_>) -> Result<UciCommand, &'stati
 	let mut value = None;
 	while let Some(word) = cmd.next() {
 		match word {
-			"name" => name = cmd.next(),
+			"name" => {
+				name = Some(cmd.take_while_ref(|&w| w != "value").fold(
+					String::new(),
+					|mut acc, s| {
+						acc.push_str(s);
+						acc
+					},
+				))
+			}
 			"value" => value = cmd.next(),
 			_ => {}
 		}
@@ -165,7 +173,7 @@ fn parse_setopt(mut cmd: SplitAsciiWhitespace<'_>) -> Result<UciCommand, &'stati
 		_ => return Err("missing name or value"),
 	};
 
-	let option = match name {
+	let option = match name.as_ref() {
 		"UCI_AnalyseMode" | "UCI_AnalyzeMode" => {
 			EngineOption::AnalyzeMode(value.eq_ignore_ascii_case("true"))
 		}
@@ -174,6 +182,18 @@ fn parse_setopt(mut cmd: SplitAsciiWhitespace<'_>) -> Result<UciCommand, &'stati
 				.parse()
 				.map_err(|_| "specified table size isn't an integer")?;
 			EngineOption::TableSize(size)
+		}
+		"MoveOverhead" => {
+			let millis = value
+				.parse()
+				.map_err(|_| "specified overhead isn't an integer")?;
+			EngineOption::MoveOverhead(Duration::from_millis(millis))
+		}
+		"Threads" => {
+			let max_thread_count = value
+				.parse()
+				.map_err(|_| "specified thread count isn't supported")?;
+			EngineOption::Threads(max_thread_count)
 		}
 		_ => return Err("unsupported option"),
 	};
