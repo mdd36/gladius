@@ -1,7 +1,7 @@
 use crate::{
 	position::{
 		moves::{divide, Move, MoveDivision},
-		Position,
+		Color, Position,
 	},
 	search::{self, move_ordering::KillerTable, search, transposition::TranspositionTable},
 };
@@ -13,6 +13,13 @@ use std::{
 	},
 	time::Duration,
 };
+
+// Taken from https://chess.stackexchange.com/questions/2506/what-is-the-average-length-of-a-game-of-chess,
+// plus a little buffer
+const AVERAGE_MOVES_PER_GAME: u64 = 40;
+// The engine will never assume that there's fewer than this many
+// moves left when determining its time controls.
+const MIN_MOVES_REMAINING: u64 = 5;
 
 #[derive(Debug, Default)]
 pub struct SearchParameters {
@@ -50,6 +57,7 @@ pub enum EngineOption {
 	AnalyzeMode(bool),
 	MoveOverhead(Duration),
 	Threads(u8),
+	MaxMoveTime(Duration),
 }
 
 impl EngineOption {
@@ -59,6 +67,7 @@ impl EngineOption {
 			Self::AnalyzeMode(false),
 			Self::MoveOverhead(Duration::ZERO),
 			Self::Threads(4),
+			Self::MaxMoveTime(Duration::MAX),
 		]
 		.into_iter()
 	}
@@ -71,6 +80,7 @@ pub struct EngineOpts {
 	pub analyze_mode: bool,
 	pub move_overhead: Duration,
 	pub threads: u8,
+	pub max_move_time: Duration,
 }
 
 impl Default for EngineOpts {
@@ -81,6 +91,7 @@ impl Default for EngineOpts {
 			analyze_mode: false,
 			threads: 4,
 			move_overhead: Duration::ZERO,
+			max_move_time: Duration::from_secs(5),
 		}
 	}
 }
@@ -133,6 +144,23 @@ impl GladiusEngine {
 		self.output_channel
 			.send(EngineMessage::Error(message.to_string()))
 			.expect("Output channel unexpected closed!")
+	}
+
+	fn time_limit(&self, search_options: &SearchParameters) -> Duration {
+		let time_remaining = match self.current_position.metadata.to_move() {
+			Color::Black => search_options.btime,
+			Color::White => search_options.wtime,
+		};
+
+		time_remaining.map_or(self.opts.max_move_time, |total_time_remaining_millis| {
+			let expected_moves_remaining = AVERAGE_MOVES_PER_GAME
+				.saturating_sub(self.current_position.full_move_clock as u64)
+				.min(MIN_MOVES_REMAINING);
+			let millis_for_move = total_time_remaining_millis as u64 / expected_moves_remaining;
+			Duration::from_millis(millis_for_move)
+				.saturating_sub(self.opts.move_overhead)
+				.min(self.opts.max_move_time)
+		})
 	}
 }
 
@@ -207,25 +235,28 @@ impl Engine for GladiusEngine {
 		let infinite = parameters.infinite;
 		let mut killers_table = KillerTable::default();
 
+		let time_limit = match parameters.move_time {
+			Some(time) => time,
+			None => self.time_limit(&parameters),
+		};
+
 		// Create a task to stop the search after the time limit has elapsed.
 		// We'll only use 80% of the time as a safety margin to make sure we
 		// have a response before the timeout.
-		if let Some(time_limit) = parameters.move_time {
-			if !infinite {
-				let timeout_stop_flag = self.stop.clone();
-				let timeout_tx = self.output_channel.clone();
-				std::thread::spawn(move || {
-					let tic = std::time::Instant::now();
-					std::thread::sleep(time_limit.mul_f64(0.8));
-					if debug {
-						let elapsed = tic.elapsed();
-						timeout_tx
-							.send(EngineMessage::Info(format!("search timeout {elapsed:?}")))
-							.expect("Engine messaging channel was prematurely closed!");
-					}
-					timeout_stop_flag.store(true, Ordering::Relaxed);
-				});
-			}
+		if !infinite {
+			let timeout_stop_flag = self.stop.clone();
+			let timeout_tx = self.output_channel.clone();
+			std::thread::spawn(move || {
+				let tic = std::time::Instant::now();
+				std::thread::sleep(time_limit);
+				if debug {
+					let elapsed = tic.elapsed();
+					timeout_tx
+						.send(EngineMessage::Info(format!("search timeout {elapsed:?}")))
+						.expect("Engine messaging channel was prematurely closed!");
+				}
+				timeout_stop_flag.store(true, Ordering::Relaxed);
+			});
 		}
 
 		std::thread::spawn(move || {
@@ -300,6 +331,7 @@ impl Engine for GladiusEngine {
 			EngineOption::AnalyzeMode(is_enabled) => self.opts.analyze_mode = is_enabled,
 			EngineOption::MoveOverhead(overhead) => self.opts.move_overhead = overhead,
 			EngineOption::Threads(count) => self.opts.threads = count,
+			EngineOption::MaxMoveTime(move_time) => self.opts.max_move_time = move_time,
 		}
 	}
 }
