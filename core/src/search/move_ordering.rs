@@ -99,7 +99,7 @@ impl<'a> MoveIterator<'a> {
 			// each time and idk if that's wise.
 			let is_defended = self.defense.is_occupied(mov.target);
 
-			if is_defended && material_delta < 0 {
+			if is_defended && material_delta <= 0 {
 				score -= value_of_piece(Piece::Rook);
 			} else {
 				score += value_of_piece(Piece::Queen);

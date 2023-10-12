@@ -62,7 +62,7 @@ const QUEEN_SQUARE_WEIGHTS: [i16; 64] = [
 	 -5,  0,  5,  5,  5,  5,  0, -5,
 		0,  0,  5,  5,  5,  5,  0, -5,
 	-10,  5,  5,  5,  5,  5,  0,-10,
-	-10,  0,  5,  0,  0,  0,  0,-10,
+	-10,  0,  5,  0,  0,  5,  0,-10,
 	-20,-10,-10, -5, -5,-10,-10,-20
 ];
 
@@ -74,8 +74,8 @@ const KING_SQUARE_WEIGHTS: [i16; 64] = [
 	-30,-40,-40,-50,-50,-40,-40,-30,
 	-20,-30,-30,-40,-40,-30,-30,-20,
 	-10,-20,-20,-20,-20,-20,-20,-10,
-	20, 20,  0,  0,  0,  0, 20, 20,
-	20, 30, 10,  0,  0, 10, 30, 20
+	 20, 20,  0,  0,  0,  0, 20, 20,
+	 20, 30, 10,  0,  0, 10, 30, 20
 ];
 
 #[rustfmt::skip]
@@ -138,13 +138,13 @@ pub fn positioning_score(position: &Position, color: Color) -> i16 {
 	let pawn_board = position.get_board_for_piece(Piece::Pawn) & our_pieces;
 	score += pawn_board
 		.into_iter()
-		.map(|sq| PAWN_SQUARE_WEIGHTS[sq.lsb_index()])
+		.map(|sq| PAWN_SQUARE_WEIGHTS[normalize_index(color, sq)])
 		.sum::<i16>();
 
 	let rook_board = position.get_board_for_piece(Piece::Rook) & our_pieces;
 	score += rook_board
 		.into_iter()
-		.map(|sq| ROOK_SQUARE_WEIGHTS[sq.lsb_index()])
+		.map(|sq| ROOK_SQUARE_WEIGHTS[normalize_index(color, sq)])
 		.sum::<i16>();
 
 	let knight_board = position.get_board_for_piece(Piece::Knight) & our_pieces;
@@ -156,20 +156,20 @@ pub fn positioning_score(position: &Position, color: Color) -> i16 {
 	let bishop_board = position.get_board_for_piece(Piece::Bishop) & our_pieces;
 	score += bishop_board
 		.into_iter()
-		.map(|sq| BISHOP_SQUARE_WEIGHTS[sq.lsb_index()])
+		.map(|sq| BISHOP_SQUARE_WEIGHTS[normalize_index(color, sq)])
 		.sum::<i16>();
 
 	let queen_board = position.get_board_for_piece(Piece::Queen) & our_pieces;
 	score += queen_board
 		.into_iter()
-		.map(|sq| QUEEN_SQUARE_WEIGHTS[sq.lsb_index()])
+		.map(|sq| QUEEN_SQUARE_WEIGHTS[normalize_index(color, sq)])
 		.sum::<i16>();
 
 	// The king is a little different. We want to encourage it to
 	// take shelter in the early and mid game, but come out to help
 	// with checkmates in the end game.
 	let king_square = Square::from(position.get_board_for_piece(Piece::King) & our_pieces);
-	let king_square_index = king_square.lsb_index();
+	let king_square_index = normalize_index(color, king_square);
 	score += combine_phase_scores(
 		position,
 		KING_SQUARE_WEIGHTS[king_square_index],
@@ -236,4 +236,11 @@ pub fn king_safety(position: &Position, color: Color) -> i16 {
 	let weight_index = ((KING_ATTACK_WEIGHTS.len() - 1) as f64 * ratio_attacked).round() as usize;
 
 	KING_ATTACK_WEIGHTS[weight_index]
+}
+
+fn normalize_index(color: Color, square: Square) -> usize {
+	match color {
+		Color::White => square.lsb_index(),
+		Color::Black => square.mirror().lsb_index(),
+	}
 }

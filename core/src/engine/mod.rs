@@ -1,4 +1,5 @@
 use crate::{
+	eval::{evaluate_position_verbose, Evaluation, MIN_SCORE},
 	position::{
 		moves::{divide, Move, MoveDivision},
 		Color, Position,
@@ -6,6 +7,7 @@ use crate::{
 	search::{self, move_ordering::KillerTable, search, transposition::TranspositionTable},
 };
 use std::{
+	panic::catch_unwind,
 	sync::{
 		atomic::{AtomicBool, Ordering},
 		mpsc::Sender,
@@ -48,6 +50,8 @@ pub trait Engine {
 	fn ready(&self);
 
 	fn set_opt(&mut self, option: EngineOption);
+
+	fn evaluate(&self);
 }
 
 #[derive(Debug)]
@@ -107,6 +111,7 @@ pub struct AnalysisData {
 pub enum EngineMessage {
 	AnalysisData(AnalysisData),
 	BestMove(Move),
+	Evaluation(Evaluation),
 	Perft(MoveDivision),
 	ReadyOk,
 	Info(String),
@@ -170,12 +175,23 @@ impl Engine for GladiusEngine {
 			self.send_info_message("set position ack")
 		}
 
+		let original_position = self.current_position.to_owned();
+		let original_position_history = self.position_history.clone();
+
 		self.position_history.clear();
 		self.position_history.push(starting_position.zobrist_hash);
 		self.current_position = starting_position;
 
 		for m in &move_history {
-			self.current_position = self.current_position.apply_move(m);
+			self.current_position = match catch_unwind(|| self.current_position.apply_move(m)) {
+				Ok(position) => position,
+				Err(e) => {
+					self.send_error_message(format!("failed to update the position: {e:?}"));
+					self.position_history = original_position_history;
+					self.current_position = original_position;
+					return;
+				}
+			};
 			self.position_history
 				.push(self.current_position.zobrist_hash);
 		}
@@ -262,6 +278,7 @@ impl Engine for GladiusEngine {
 		std::thread::spawn(move || {
 			let mut depth = 1u8;
 			let mut best_move = None;
+			let mut current_score = MIN_SCORE;
 
 			while !stop_flag.load(Ordering::Relaxed) && (infinite || depth <= depth_limit) {
 				if analyze_mode {
@@ -271,14 +288,16 @@ impl Engine for GladiusEngine {
 				}
 
 				let tic = std::time::Instant::now();
-				let search_result = search::<false>(
+				let search_result = search(
 					&starting_position,
 					&mut move_history,
 					&mut transposition_table,
 					&mut killers_table,
-					search::SearchParameters::new(depth),
+					search::SearchParameters::new_with_alpha(depth, current_score),
 					stop_flag.clone(),
 				);
+
+				best_move = search_result.best_move.or(best_move);
 
 				if analyze_mode {
 					search_tx
@@ -286,13 +305,13 @@ impl Engine for GladiusEngine {
 							score: search_result.score,
 							depth,
 							time: tic.elapsed(),
-							best_move: search_result.best_move.unwrap_or(Move::null_move()),
+							best_move: best_move.unwrap_or(Move::null_move()),
 							nodes: search_result.nodes_explored,
 						}))
 						.expect("Engine messaging channel was prematurely closed!");
 				}
 
-				best_move = search_result.best_move;
+				current_score = search_result.score;
 				depth += 1;
 			}
 
@@ -333,5 +352,13 @@ impl Engine for GladiusEngine {
 			EngineOption::Threads(count) => self.opts.threads = count,
 			EngineOption::MaxMoveTime(move_time) => self.opts.max_move_time = move_time,
 		}
+	}
+
+	fn evaluate(&self) {
+		self.output_channel
+			.send(EngineMessage::Evaluation(evaluate_position_verbose(
+				&self.current_position,
+			)))
+			.expect("Engine output channel closed unexpectedly!");
 	}
 }

@@ -173,6 +173,12 @@ impl Square {
 		self.0 as usize
 	}
 
+	pub fn mirror(&self) -> Self {
+		let rank = self.rank();
+		let file = self.file();
+		Self::from_rank_and_file(7 - rank, 7 - file)
+	}
+
 	/// Represent this square by its rank and file in a string.
 	///
 	/// ### Example

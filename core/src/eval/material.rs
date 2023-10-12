@@ -36,7 +36,7 @@ pub fn material_score(position: &Position, color: Color) -> i16 {
 		+ bishop_pair_bonus
 }
 
-pub fn value_of_piece(piece: Piece) -> i16 {
+pub const fn value_of_piece(piece: Piece) -> i16 {
 	MATERIAL_VALUES[piece as usize]
 }
 

@@ -5,8 +5,9 @@ use std::{
 	sync::mpsc::{channel, Receiver, TryRecvError},
 };
 
-use gladius_core::engine::{
-	AnalysisData, Engine, EngineMessage, EngineOption, EngineOpts, GladiusEngine,
+use gladius_core::{
+	engine::{AnalysisData, Engine, EngineMessage, EngineOption, EngineOpts, GladiusEngine},
+	eval::Evaluation,
 };
 use parser::{parse_input, UciCommand};
 use rustyline::{error::ReadlineError, Config, DefaultEditor};
@@ -76,10 +77,6 @@ quit
 
 fn main() {
 	println!("{CLI_BANNER}");
-	uci_loop()
-}
-
-fn uci_loop() {
 	let stdin_rx = stdin_channel();
 	let (engine_tx, engine_rx) = channel();
 	let mut engine = GladiusEngine::new(EngineOpts::default(), engine_tx);
@@ -91,6 +88,7 @@ fn uci_loop() {
 			Ok(EngineMessage::BestMove(bm)) => println!("bestmove {bm}"),
 			Ok(EngineMessage::Info(msg)) => println!("info string {msg}"),
 			Ok(EngineMessage::Error(msg)) => eprintln!("error {msg}"),
+			Ok(EngineMessage::Evaluation(eval)) => println!("info {}", eval.to_uci_string()),
 			Ok(EngineMessage::AnalysisData(data)) => {
 				println!("info string {}", data.to_uci_string())
 			}
@@ -154,6 +152,7 @@ fn uci_loop() {
 			UciCommand::Register => println!("registration ok"),
 			UciCommand::Help => println!("{HELP_DIALOG}"),
 			UciCommand::Quit => exit(0),
+			UciCommand::Evaluate => engine.evaluate(),
 		}
 	}
 }
@@ -185,7 +184,7 @@ impl ToUciString for AnalysisData {
 	fn to_uci_string(&self) -> String {
 		format!(
 			"score cp {:.1} depth {} time {} pv {} nodes {} nps {:.2}",
-			self.score as f64 / 100.0,
+			self.score as f64,
 			self.depth,
 			self.time.as_millis(),
 			self.best_move,
@@ -206,5 +205,18 @@ impl ToUciString for EngineOption {
 			Self::Debug(_) => "name Debug type check default false",
 		}
 		.to_owned()
+	}
+}
+
+impl ToUciString for Evaluation {
+	fn to_uci_string(&self) -> String {
+		format!(
+			"total cp {} material cp {} location cp {} pawns cp {} king safety cp {}",
+			self.total,
+			self.material,
+			self.material_location,
+			self.pawn_structure,
+			self.king_safety,
+		)
 	}
 }

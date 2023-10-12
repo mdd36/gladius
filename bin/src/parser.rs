@@ -1,5 +1,7 @@
 use itertools::Itertools;
 use std::{
+	any::type_name,
+	panic::catch_unwind,
 	str::{FromStr, SplitAsciiWhitespace},
 	time::Duration,
 };
@@ -25,6 +27,7 @@ pub enum UciCommand {
 	Stop,
 	Quit,
 	Help,
+	Evaluate,
 }
 
 impl std::fmt::Debug for UciCommand {
@@ -43,11 +46,12 @@ impl std::fmt::Debug for UciCommand {
 			Self::Stop => write!(f, "Stop"),
 			Self::Quit => write!(f, "Quit"),
 			Self::Help => write!(f, "Help"),
+			Self::Evaluate => write!(f, "Evaluate"),
 		}
 	}
 }
 
-pub fn parse_input(input: String) -> Result<UciCommand, &'static str> {
+pub fn parse_input(input: String) -> Result<UciCommand, String> {
 	let mut split = input.split_ascii_whitespace();
 
 	// UCI technically allows garage before the actual command, so we may need to
@@ -67,17 +71,15 @@ pub fn parse_input(input: String) -> Result<UciCommand, &'static str> {
 			"perft" => return Ok(UciCommand::Perft(parse(split.next())?)),
 			"go" => return parse_go(split),
 			"setoption" => return parse_setopt(split),
+			"evaluate" => return Ok(UciCommand::Evaluate),
 			_ => continue,
 		}
 	}
 
-	Err(r#"unknown command. For help, enter "help""#)
+	Err(r#"unknown command. For help, enter "help""#.to_owned())
 }
 
-fn parse_position(
-	input: &str,
-	mut cmd: SplitAsciiWhitespace<'_>,
-) -> Result<UciCommand, &'static str> {
+fn parse_position(input: &str, mut cmd: SplitAsciiWhitespace<'_>) -> Result<UciCommand, String> {
 	let mut position = None;
 	let mut moves: Vec<&str> = Vec::new();
 
@@ -119,7 +121,10 @@ fn parse_position(
 		let mut parsed_moves = Vec::new();
 		for m in moves {
 			// TODO maybe this should be handled by the engine
-			let to_apply = Move::from_uci_str(m, &after_moves_position);
+			let to_apply = match catch_unwind(|| Move::from_uci_str(m, &after_moves_position)) {
+				Ok(m) => m,
+				Err(e) => return Err(format!("failed to parse move {e:?}")),
+			};
 			after_moves_position = after_moves_position.apply_move(&to_apply);
 			parsed_moves.push(to_apply);
 		}
@@ -127,10 +132,10 @@ fn parse_position(
 		return Ok(UciCommand::Position(starting_position, parsed_moves));
 	}
 
-	return Err("No position specified in command");
+	return Err("No position specified in command".to_owned());
 }
 
-fn parse_go(mut cmd: SplitAsciiWhitespace<'_>) -> Result<UciCommand, &'static str> {
+fn parse_go(mut cmd: SplitAsciiWhitespace<'_>) -> Result<UciCommand, String> {
 	let mut params = SearchParameters::default();
 
 	while let Some(parameter_name) = cmd.next() {
@@ -149,7 +154,7 @@ fn parse_go(mut cmd: SplitAsciiWhitespace<'_>) -> Result<UciCommand, &'static st
 	Ok(UciCommand::Go(params))
 }
 
-fn parse_setopt(mut cmd: SplitAsciiWhitespace<'_>) -> Result<UciCommand, &'static str> {
+fn parse_setopt(mut cmd: SplitAsciiWhitespace<'_>) -> Result<UciCommand, String> {
 	let mut name = None;
 	let mut value = None;
 	while let Some(word) = cmd.next() {
@@ -170,7 +175,7 @@ fn parse_setopt(mut cmd: SplitAsciiWhitespace<'_>) -> Result<UciCommand, &'stati
 
 	let (name, value) = match (name, value) {
 		(Some(n), Some(v)) => (n, v),
-		_ => return Err("missing name or value"),
+		_ => return Err("missing name or value".to_owned()),
 	};
 
 	let option = match name.as_ref() {
@@ -195,15 +200,22 @@ fn parse_setopt(mut cmd: SplitAsciiWhitespace<'_>) -> Result<UciCommand, &'stati
 				.map_err(|_| "specified thread count isn't supported")?;
 			EngineOption::Threads(max_thread_count)
 		}
-		_ => return Err("unsupported option"),
+		"MaxMoveTime" => {
+			let max_move_time_millis = value
+				.parse()
+				.map_err(|_| "Provided value isn't a non-negative number")?;
+			EngineOption::MaxMoveTime(Duration::from_millis(max_move_time_millis))
+		}
+		opt => return Err(format!("unsupported option: {opt}")),
 	};
 
 	Ok(UciCommand::SetOption(option))
 }
 
-fn parse<T: FromStr>(value: Option<&str>) -> Result<T, &'static str> {
-	value
-		.map(|v| v.parse().ok())
-		.flatten()
-		.ok_or("failed to parse from input")
+fn parse<T: FromStr>(value: Option<&str>) -> Result<T, String> {
+	value.map(|v| v.parse().ok()).flatten().ok_or(format!(
+		"failed to parse {} from input {:?} ",
+		type_name::<T>(),
+		value
+	))
 }

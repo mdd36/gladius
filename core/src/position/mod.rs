@@ -93,6 +93,17 @@ impl Piece {
 		.iter()
 		.copied()
 	}
+
+	pub fn to_char(&self) -> &str {
+		match self {
+			Self::Pawn => "p",
+			Self::Rook => "r",
+			Self::Knight => "n",
+			Self::Bishop => "b",
+			Self::Queen => "q",
+			Self::King => "k",
+		}
+	}
 }
 
 /// 16 bits packed to represent the metadata for a given position.
@@ -469,7 +480,11 @@ impl Position {
 		self.metadata.half_move_clock()
 	}
 
-	pub fn is_in_check(&self, color: Color) -> bool {
+	pub fn any_checks(&self) -> bool {
+		self.is_color_in_check(Color::White) || self.is_color_in_check(Color::Black)
+	}
+
+	pub fn is_color_in_check(&self, color: Color) -> bool {
 		let king_square =
 			Square::from(self.get_board_for_color(color) & self.get_board_for_piece(Piece::King));
 		attackers_of_square(king_square, !color, self).has_pieces()
@@ -482,7 +497,6 @@ impl Position {
 
 		let mut boards = self.boards.clone();
 
-		// TODO profile if this branching is a big penalty
 		if let Some(captured_piece) = self.piece_on(next_move.target) {
 			boards[1 - color_to_move] ^= next_move.target;
 			boards[captured_piece as usize] ^= next_move.target;
@@ -646,6 +660,7 @@ impl Position {
 #[cfg(test)]
 mod test {
 
+	use super::moves::Move;
 	use super::*;
 	use pretty_assertions::assert_eq;
 
@@ -695,31 +710,78 @@ mod test {
 
 	#[test]
 	pub fn can_castle_king_side() {
-		assert!(Position::from_fen(
-			"rnbqkb1r/pppp1pp1/4pn2/7p/2B1P3/5PPN/PPPP3P/RNBQK2R w KQkq - 0 1"
-		)
-		.unwrap()
-		.can_castle(Color::White, CastleSide::King));
+		let position =
+			Position::from_fen("rnbqkb1r/pppp1pp1/4pn2/7p/2B1P3/5PPN/PPPP3P/RNBQK2R w KQkq - 0 1")
+				.unwrap();
+		assert!(position.can_castle(Color::White, CastleSide::King));
 
-		assert!(Position::from_fen(
-			"rnbqk2r/ppp2ppp/5n2/3pp3/1b1PP3/2N2P2/PPPB2PP/R2QKBNR b KQkq - 0 1"
+		let position = position.apply_move(&Move::from_uci_str("e1g1", &position));
+		assert_eq!(
+			Some(Piece::King),
+			position.piece_on(Square::from_algebraic_notation("g1"))
+		);
+		assert_eq!(
+			Some(Piece::Rook),
+			position.piece_on(Square::from_algebraic_notation("f1"))
+		);
+		assert!(!position.can_castle(Color::White, CastleSide::King));
+		assert!(!position.can_castle(Color::White, CastleSide::Queen));
+
+		let position = Position::from_fen(
+			"rnbqk2r/ppp2ppp/5n2/3pp3/1b1PP3/2N2P2/PPPB2PP/R2QKBNR b KQkq - 0 1",
 		)
-		.unwrap()
-		.can_castle(Color::Black, CastleSide::King));
+		.unwrap();
+		assert!(position.can_castle(Color::Black, CastleSide::King));
+
+		let position = position.apply_move(&Move::from_uci_str("e8g8", &position));
+		assert_eq!(
+			Some(Piece::King),
+			position.piece_on(Square::from_algebraic_notation("g8"))
+		);
+		assert_eq!(
+			Some(Piece::Rook),
+			position.piece_on(Square::from_algebraic_notation("f8"))
+		);
+		assert!(!position.can_castle(Color::Black, CastleSide::King));
+		assert!(!position.can_castle(Color::Black, CastleSide::Queen));
 	}
 
 	#[test]
 	pub fn can_castle_queen_side() {
-		assert!(Position::from_fen(
-			"r1bqkbnr/ppp2ppp/2n5/3pp3/3P4/2NQB3/PPP1PPPP/R3KBNR w KQkq - 0 1"
-		)
-		.unwrap()
-		.can_castle(Color::White, CastleSide::Queen));
+		// Try to long castle with white
+		let position =
+			Position::from_fen("r1bqkbnr/ppp2ppp/2n5/3pp3/3P4/2NQB3/PPP1PPPP/R3KBNR w KQkq - 0 1")
+				.unwrap();
+		assert!(position.can_castle(Color::White, CastleSide::Queen));
 
-		assert!(
-			Position::from_fen("r3kbnr/pppppppp/b1n5/5q2/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1")
-				.unwrap()
-				.can_castle(Color::Black, CastleSide::Queen)
+		let position = position.apply_move(&Move::from_uci_str("e1c1", &position));
+		assert_eq!(
+			Some(Piece::King),
+			position.piece_on(Square::from_algebraic_notation("c1"))
 		);
+		assert_eq!(
+			Some(Piece::Rook),
+			position.piece_on(Square::from_algebraic_notation("d1"))
+		);
+		assert!(!position.can_castle(Color::White, CastleSide::King));
+		assert!(!position.can_castle(Color::White, CastleSide::Queen));
+
+		// Repeat with black
+		let position =
+			Position::from_fen("r3kbnr/pppppppp/b1n5/5q2/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1")
+				.unwrap();
+		assert!(position.can_castle(Color::Black, CastleSide::Queen));
+
+		let position = position.apply_move(&Move::from_uci_str("e8c8", &position));
+		assert_eq!(
+			Some(Piece::King),
+			position.piece_on(Square::from_algebraic_notation("c8"))
+		);
+		assert_eq!(
+			Some(Piece::Rook),
+			position.piece_on(Square::from_algebraic_notation("d8"))
+		);
+		assert!(!position.can_castle(Color::Black, CastleSide::King));
+		assert!(!position.can_castle(Color::Black, CastleSide::Queen));
 	}
 }

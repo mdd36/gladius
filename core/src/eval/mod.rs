@@ -14,6 +14,15 @@ const TOTAL_PHASE: f64 = 24.0;
 pub const MAX_SCORE: i16 = std::i16::MAX;
 pub const MIN_SCORE: i16 = std::i16::MIN + 1; // To account for 2's complement
 pub const CHECKMATE_SCORE: i16 = MIN_SCORE + std::u8::MAX as i16;
+pub const STALEMATE_SCORE: i16 = 0;
+
+pub struct Evaluation {
+	pub total: i16,
+	pub material: i16,
+	pub material_location: i16,
+	pub pawn_structure: i16,
+	pub king_safety: i16,
+}
 
 pub fn evaluate_position(position: &Position) -> i16 {
 	let us = position.metadata.to_move();
@@ -35,15 +44,46 @@ pub fn evaluate_position(position: &Position) -> i16 {
 	let their_king_safety = king_safety(position, them);
 	let king_safety_difference = our_king_safety - their_king_safety;
 
-	// let our_attacks = attacks_score(position, us);
-	// let their_attacks = attacks_score(position, them);
-	// let attack_difference = our_attacks - their_attacks;
-
-	material_difference
+	let total = material_difference
 		+ positioning_difference
 		+ pawn_structure_difference
-		+ king_safety_difference
-	// + attack_difference
+		+ king_safety_difference;
+
+	total
+}
+
+pub fn evaluate_position_verbose(position: &Position) -> Evaluation {
+	let us = position.metadata.to_move();
+	let them = !us;
+
+	let our_material = material_score(position, us);
+	let their_material = material_score(position, them);
+	let material_difference = our_material - their_material;
+
+	let our_position = positioning_score(position, us);
+	let their_position = positioning_score(position, them);
+	let positioning_difference = our_position - their_position;
+
+	let our_pawn_structure = pawn_structure(position, us);
+	let their_pawn_structure = pawn_structure(position, them);
+	let pawn_structure_difference = our_pawn_structure - their_pawn_structure;
+
+	let our_king_safety = king_safety(position, us);
+	let their_king_safety = king_safety(position, them);
+	let king_safety_difference = our_king_safety - their_king_safety;
+
+	let total = material_difference
+		+ positioning_difference
+		+ pawn_structure_difference
+		+ king_safety_difference;
+
+	Evaluation {
+		total,
+		material: material_difference,
+		material_location: positioning_difference,
+		pawn_structure: pawn_structure_difference,
+		king_safety: king_safety_difference,
+	}
 }
 
 /// Get a float that represents the current phase of the game based

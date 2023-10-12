@@ -8,8 +8,8 @@ use std::sync::{
 
 use crate::{
 	eval::{
-		evaluate_position, repetition::is_threefold_repetition, CHECKMATE_SCORE, MAX_SCORE,
-		MIN_SCORE,
+		evaluate_position, material::value_of_piece, repetition::is_threefold_repetition,
+		CHECKMATE_SCORE, MAX_SCORE, MIN_SCORE, STALEMATE_SCORE,
 	},
 	position::{
 		moves::{generate_moves, Move},
@@ -23,7 +23,8 @@ use self::{
 };
 
 const MAX_EXTENSION_DEPTH: u8 = 4;
-const DELTA: i16 = 200; // Starting with 200 centipawns
+const MAX_CAPTURE_VALUE: i16 = value_of_piece(Piece::Queen);
+const DELTA: i16 = 300; // Starting with 300 centipawns
 
 /// Because we're thinning our move search space using [alpha-beta pruning],
 /// the score determined in a search may be exact, and upper bound, or a
@@ -63,7 +64,6 @@ pub struct SearchParameters {
 	pub extensions: u8,
 	pub alpha: i16,
 	pub beta: i16,
-	pub quiescent: bool,
 }
 
 impl SearchParameters {
@@ -74,7 +74,16 @@ impl SearchParameters {
 			extensions: 0,
 			alpha: MIN_SCORE,
 			beta: MAX_SCORE,
-			quiescent: false,
+		}
+	}
+
+	pub fn new_with_alpha(max_depth: u8, alpha: i16) -> Self {
+		Self {
+			ply: max_depth,
+			ply_from_root: 0,
+			extensions: 0,
+			alpha,
+			beta: MAX_SCORE,
 		}
 	}
 
@@ -85,7 +94,6 @@ impl SearchParameters {
 			extensions: self.extensions,
 			alpha: -self.beta,
 			beta: -self.alpha,
-			quiescent: self.quiescent,
 		}
 	}
 
@@ -101,11 +109,11 @@ impl SearchParameters {
 			extensions: self.extensions,
 			alpha: -self.beta,
 			beta: -self.alpha,
-			quiescent: self.quiescent,
 		}
 	}
 }
 
+#[derive(Debug)]
 pub struct SearchResult {
 	pub score: i16,
 	pub best_move: Option<Move>,
@@ -122,7 +130,111 @@ impl From<TranspositionEntry> for SearchResult {
 	}
 }
 
-pub fn search<const QUIESCENT: bool>(
+fn quiescence(
+	position: &Position,
+	mut alpha: i16,
+	beta: i16,
+	stop: Arc<AtomicBool>,
+) -> SearchResult {
+	let to_move = position.metadata.to_move();
+	let is_in_check = position.is_color_in_check(to_move);
+	let current_score = if is_in_check {
+		alpha
+	} else {
+		evaluate_position(position)
+	};
+
+	alpha = std::cmp::max(current_score, alpha);
+
+	if current_score >= beta {
+		return SearchResult {
+			score: beta,
+			best_move: None,
+			nodes_explored: 1,
+		};
+	}
+
+	if current_score.saturating_add(MAX_CAPTURE_VALUE) < alpha {
+		// Even if the opponent hangs their queen, this is still not the best
+		// line for us
+		return SearchResult {
+			score: alpha,
+			best_move: None,
+			nodes_explored: 1,
+		};
+	}
+
+	let moves = if is_in_check {
+		// Need all the moves so we can try to evade this check
+		generate_moves::<false>(position)
+	} else {
+		// Only capture
+		generate_moves::<true>(position)
+	};
+
+	if moves.is_empty() {
+		let score = if is_in_check {
+			CHECKMATE_SCORE
+		} else {
+			current_score
+		};
+		return SearchResult {
+			score,
+			best_move: None,
+			nodes_explored: 1,
+		};
+	}
+
+	let mut nodes_explored = 1;
+
+	let ordered_move_iterator = MoveIterator::new(moves, position, None, None);
+	for m in ordered_move_iterator {
+		if stop.load(Ordering::Relaxed) {
+			return SearchResult {
+				score: current_score,
+				best_move: None,
+				nodes_explored,
+			};
+		}
+
+		// Another round of delta pruning, but don't prune any moves when we're in check!
+		// We want to see *every* option to evade a checkmate
+		if !is_in_check {
+			let victim = position.piece_on(m.target).unwrap_or(Piece::Pawn); // En passant
+			let maximum_advantage = value_of_piece(victim) + DELTA;
+			if current_score + maximum_advantage < alpha {
+				// If capturing the piece plus some margin doesn't show improvement
+				// over alpha, it's time to abandon this line.
+				continue;
+			}
+		}
+
+		let search_result = quiescence(&position.apply_move(&m), -beta, -alpha, stop.clone());
+
+		let score = -search_result.score;
+		nodes_explored += search_result.nodes_explored;
+
+		if score > alpha {
+			alpha = score;
+		}
+
+		if score >= beta {
+			return SearchResult {
+				score,
+				best_move: None,
+				nodes_explored,
+			};
+		}
+	}
+
+	SearchResult {
+		score: alpha,
+		best_move: None,
+		nodes_explored,
+	}
+}
+
+pub fn search(
 	position: &Position,
 	position_history: &mut Vec<u64>,
 	transposition_table: &mut TranspositionTable,
@@ -130,115 +242,72 @@ pub fn search<const QUIESCENT: bool>(
 	mut parameters: SearchParameters,
 	stop: Arc<AtomicBool>,
 ) -> SearchResult {
-	let mut best_score = Score::UpperBound(parameters.alpha);
-	let saved_position = transposition_table.get(position.zobrist_hash);
-	let mut best_move = match saved_position {
-		Some(entry) => Some(entry.best_move),
-		_ => None,
-	};
-
-	if is_threefold_repetition(
-		position.half_move_clock(),
-		parameters.ply_from_root,
-		position_history,
-		position.zobrist_hash,
-	) {
+	// Draws from board history
+	if position.half_move_clock() >= 100
+		|| is_threefold_repetition(
+			position.half_move_clock(),
+			parameters.ply_from_root,
+			position_history,
+			position.zobrist_hash,
+		) {
 		return SearchResult {
-			score: 0,
-			best_move: best_move,
-			nodes_explored: 1,
-		};
-	}
-
-	if QUIESCENT {
-		let current_score = evaluate_position(position);
-		if current_score >= parameters.beta {
-			return SearchResult {
-				score: parameters.beta,
-				best_move,
-				nodes_explored: 1,
-			};
-		}
-
-		// This move might gain us something, but not enough to justify
-		// looking further down this line. We could also be losing down
-		// this line, which definitely means we should abandon it!
-		// TODO: Turn this off when we get to the endgame
-		if current_score < parameters.alpha.saturating_sub(DELTA) {
-			return SearchResult {
-				score: parameters.alpha,
-				best_move,
-				nodes_explored: 1,
-			};
-		}
-
-		if current_score > parameters.alpha {
-			parameters.alpha = current_score
-		}
-	}
-
-	if QUIESCENT && parameters.ply == 0 {
-		return SearchResult {
-			score: parameters.alpha,
-			best_move,
+			score: STALEMATE_SCORE,
+			best_move: None,
 			nodes_explored: 1,
 		};
 	}
 
 	if parameters.ply == 0 {
-		return search::<true>(
-			position,
-			position_history,
-			transposition_table,
-			killers_table,
-			parameters.quiescent(),
-			stop.clone(),
-		);
+		return quiescence(position, parameters.alpha, parameters.beta, stop.clone());
 	}
-
+	let saved_position = transposition_table.get(position.zobrist_hash);
 	if let Some(entry) = saved_position {
 		if entry.depth >= parameters.ply {
 			return SearchResult::from(entry);
 		}
 	};
 
-	let possible_moves = generate_moves::<QUIESCENT>(position);
-
-	if QUIESCENT && possible_moves.is_empty() {
+	if parameters.alpha >= parameters.beta {
 		return SearchResult {
 			score: parameters.alpha,
-			best_move,
+			best_move: None,
 			nodes_explored: 1,
 		};
 	}
 
+	let possible_moves = generate_moves::<false>(position);
+
 	if possible_moves.is_empty() {
-		if position.is_in_check(position.metadata.to_move()) {
+		if position.is_color_in_check(position.metadata.to_move()) {
 			return SearchResult {
 				score: CHECKMATE_SCORE + parameters.ply_from_root as i16,
-				best_move,
+				best_move: None,
 				nodes_explored: 1,
 			};
 		} else {
 			return SearchResult {
-				score: 0,
-				best_move,
+				score: STALEMATE_SCORE,
+				best_move: None,
 				nodes_explored: 1,
 			};
 		}
 	}
 
-	let mut nodes_explored = 0;
-	for m in MoveIterator::new(
+	let mut best_move = None;
+	let mut best_score = Score::UpperBound(parameters.alpha);
+	let mut nodes_explored = 1;
+	let ordered_move_iterator = MoveIterator::new(
 		possible_moves,
 		position,
-		best_move,
+		saved_position.map(|entry| entry.best_move),
 		killers_table.get(parameters.ply),
-	) {
+	);
+
+	for m in ordered_move_iterator {
 		if stop.load(Ordering::Relaxed) {
 			return SearchResult {
 				score: best_score.inner(),
-				best_move,
+				best_move: best_move,
 				nodes_explored,
 			};
 		}
@@ -247,12 +316,10 @@ pub fn search<const QUIESCENT: bool>(
 		let mut next_ply_parameters = parameters.next_ply();
 		position_history.push(new_position.zobrist_hash);
 
-		if !QUIESCENT {
-			let extensions = extensions(parameters.extensions, &new_position, &m);
-			next_ply_parameters.add_extension(extensions);
-		}
+		let extensions = extensions(parameters.extensions, &new_position, &m);
+		next_ply_parameters.add_extension(extensions);
 
-		let search_result = search::<QUIESCENT>(
+		let search_result = search(
 			&new_position,
 			position_history,
 			transposition_table,
@@ -262,46 +329,36 @@ pub fn search<const QUIESCENT: bool>(
 		);
 
 		let score = -search_result.score;
+		nodes_explored += search_result.nodes_explored;
 
 		position_history.pop();
-
-		if score >= parameters.beta {
-			// This move is too good for us, so our opponent won't let us play it
-			let table_entry =
-				TranspositionEntry::from(position, m, Score::LowerBound(score), parameters.ply);
-			transposition_table.insert(table_entry);
-
-			if !m.flags.is_capture() {
-				killers_table.insert(parameters.ply_from_root, m);
-			}
-
-			return SearchResult {
-				score,
-				best_move: Some(m),
-				nodes_explored: nodes_explored + 1,
-			};
-		}
 
 		if score > parameters.alpha {
 			// A new best move!
 			parameters.alpha = score;
 			best_score = Score::Exact(score);
 			best_move = Some(m);
-		}
 
-		nodes_explored += search_result.nodes_explored;
+			if score >= parameters.beta {
+				// This move is too good for us, so our opponent won't let us play it
+				if !m.flags.is_capture() {
+					killers_table.insert(parameters.ply_from_root, m);
+				}
+
+				best_score = Score::LowerBound(parameters.beta);
+				break;
+			}
+		}
 	}
 
-	if !QUIESCENT {
-		if let Some(m) = best_move {
-			let table_entry = TranspositionEntry::from(position, m, best_score, parameters.ply);
-			transposition_table.insert(table_entry);
-		}
+	if let Some(m) = best_move {
+		let table_entry = TranspositionEntry::from(position, m, best_score, parameters.ply);
+		transposition_table.insert(table_entry)
 	}
 
 	SearchResult {
 		score: best_score.inner(),
-		best_move,
+		best_move: best_move,
 		nodes_explored,
 	}
 }
@@ -316,7 +373,7 @@ fn extensions(num_extensions: u8, position: &Position, move_taken: &Move) -> u8 
 		extension += 1;
 	}
 
-	if position.is_in_check(Color::White) || position.is_in_check(Color::Black) {
+	if position.is_color_in_check(Color::White) || position.is_color_in_check(Color::Black) {
 		extension += 1;
 	}
 

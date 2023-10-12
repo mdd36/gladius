@@ -157,17 +157,26 @@ impl MoveFlags {
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct Move {
+	/// Extra information about the move, like capture status or promotions
 	pub flags: MoveFlags,
+
+	/// The origin square
 	pub start: Square,
+
+	/// The destination square.
 	pub target: Square,
 }
 
 impl Move {
 	pub fn null_move() -> Self {
+		Self::new(Square::from(1), Square::from(1), MoveFlags::default())
+	}
+
+	pub fn new(start: Square, target: Square, flags: MoveFlags) -> Self {
 		Self {
-			flags: MoveFlags::default(),
-			start: Square::from(0),
-			target: Square::from(0),
+			start,
+			target,
+			flags,
 		}
 	}
 	/// Read a move from a UCI formatted string, like a2a4.
@@ -259,7 +268,7 @@ impl Move {
 		let starting_king_square = KING_START[color_to_move as usize];
 		if piece == Piece::King && start == starting_king_square {
 			let king_side_castle_square = KING_CASTLE_SQUARE[color_to_move as usize];
-			let queen_side_castle_square = KING_CASTLE_SQUARE[color_to_move as usize];
+			let queen_side_castle_square = QUEEN_CASTLE_SQUARE[color_to_move as usize];
 			if target == king_side_castle_square {
 				flags = MoveFlags::king_castling();
 			} else if target == queen_side_castle_square {
@@ -267,11 +276,7 @@ impl Move {
 			}
 		}
 
-		Move {
-			flags,
-			start,
-			target,
-		}
+		Move::new(start, target, flags)
 	}
 }
 
@@ -330,21 +335,13 @@ pub fn generate_moves<const QUIESCENT: bool>(position: &Position) -> Vec<Move> {
 	if metadata.can_castle(to_move, CastleSide::King) {
 		let start = KING_START[to_move as usize];
 		let target = KING_CASTLE_SQUARE[to_move as usize];
-		moves.push(Move {
-			start,
-			target,
-			flags: MoveFlags::king_castling(),
-		});
+		moves.push(Move::new(start, target, MoveFlags::king_castling()));
 	}
 
 	if metadata.can_castle(to_move, CastleSide::Queen) {
 		let start = KING_START[to_move as usize];
 		let target = QUEEN_CASTLE_SQUARE[to_move as usize];
-		moves.push(Move {
-			start,
-			target,
-			flags: MoveFlags::queen_castling(),
-		});
+		moves.push(Move::new(start, target, MoveFlags::queen_castling()));
 	}
 
 	// Pawns
@@ -392,11 +389,7 @@ fn standard_moves_for_piece(piece: Piece, position: &Position, pins: Board, move
 			} else {
 				MoveFlags::quiet_move()
 			};
-			moves.push(Move {
-				start: square,
-				target: attacked_square,
-				flags,
-			});
+			moves.push(Move::new(square, attacked_square, flags));
 		}
 	}
 }
@@ -419,32 +412,12 @@ fn pawn_single_moves(position: &Position, pins: Board, moves: &mut Vec<Move>) {
 		let pin_limitation = pin_mask(pins, king_square, start);
 		if !total_occupancy.is_occupied(target) && pin_limitation.is_occupied(target) {
 			if promotion_ranks.is_occupied(target) {
-				moves.push(Move {
-					start,
-					target,
-					flags: MoveFlags::knight_promotion(),
-				});
-				moves.push(Move {
-					start,
-					target,
-					flags: MoveFlags::bishop_promotion(),
-				});
-				moves.push(Move {
-					start,
-					target,
-					flags: MoveFlags::rook_promotion(),
-				});
-				moves.push(Move {
-					start,
-					target,
-					flags: MoveFlags::queen_promotion(),
-				});
+				moves.push(Move::new(start, target, MoveFlags::knight_promotion()));
+				moves.push(Move::new(start, target, MoveFlags::bishop_promotion()));
+				moves.push(Move::new(start, target, MoveFlags::rook_promotion()));
+				moves.push(Move::new(start, target, MoveFlags::queen_promotion()));
 			} else {
-				moves.push(Move {
-					start,
-					target,
-					flags: MoveFlags::quiet_move(),
-				});
+				moves.push(Move::new(start, target, MoveFlags::quiet_move()));
 			}
 		}
 	}
@@ -455,39 +428,31 @@ fn pawn_single_moves(position: &Position, pins: Board, moves: &mut Vec<Move>) {
 		let pin_limitation = pin_mask(pins, king_square, start);
 		if opponent_board.is_occupied(target) && pin_limitation.is_occupied(target) {
 			if promotion_ranks.is_occupied(target) {
-				moves.push(Move {
+				moves.push(Move::new(
 					start,
 					target,
-					flags: MoveFlags::knight_promotion_capture(),
-				});
-				moves.push(Move {
+					MoveFlags::knight_promotion_capture(),
+				));
+				moves.push(Move::new(
 					start,
 					target,
-					flags: MoveFlags::bishop_promotion_capture(),
-				});
-				moves.push(Move {
+					MoveFlags::bishop_promotion_capture(),
+				));
+				moves.push(Move::new(
 					start,
 					target,
-					flags: MoveFlags::rook_promotion_capture(),
-				});
-				moves.push(Move {
+					MoveFlags::rook_promotion_capture(),
+				));
+				moves.push(Move::new(
 					start,
 					target,
-					flags: MoveFlags::queen_promotion_capture(),
-				});
+					MoveFlags::queen_promotion_capture(),
+				));
 			} else {
-				moves.push(Move {
-					start,
-					target,
-					flags: MoveFlags::capture(),
-				});
+				moves.push(Move::new(start, target, MoveFlags::capture()));
 			}
 		} else if en_passant_square.map(|sq| sq == target).unwrap_or(false) {
-			moves.push(Move {
-				start,
-				target,
-				flags: MoveFlags::en_passant(),
-			});
+			moves.push(Move::new(start, target, MoveFlags::en_passant()));
 		}
 	}
 
@@ -496,39 +461,31 @@ fn pawn_single_moves(position: &Position, pins: Board, moves: &mut Vec<Move>) {
 		let pin_limitation = pin_mask(pins, king_square, start);
 		if opponent_board.is_occupied(target) && pin_limitation.is_occupied(target) {
 			if promotion_ranks.is_occupied(target) {
-				moves.push(Move {
+				moves.push(Move::new(
 					start,
 					target,
-					flags: MoveFlags::knight_promotion_capture(),
-				});
-				moves.push(Move {
+					MoveFlags::knight_promotion_capture(),
+				));
+				moves.push(Move::new(
 					start,
 					target,
-					flags: MoveFlags::bishop_promotion_capture(),
-				});
-				moves.push(Move {
+					MoveFlags::bishop_promotion_capture(),
+				));
+				moves.push(Move::new(
 					start,
 					target,
-					flags: MoveFlags::rook_promotion_capture(),
-				});
-				moves.push(Move {
+					MoveFlags::rook_promotion_capture(),
+				));
+				moves.push(Move::new(
 					start,
 					target,
-					flags: MoveFlags::queen_promotion_capture(),
-				});
+					MoveFlags::queen_promotion_capture(),
+				));
 			} else {
-				moves.push(Move {
-					start,
-					target,
-					flags: MoveFlags::capture(),
-				});
+				moves.push(Move::new(start, target, MoveFlags::capture()));
 			}
 		} else if en_passant_square.map(|sq| sq == target).unwrap_or(false) {
-			moves.push(Move {
-				start,
-				target,
-				flags: MoveFlags::en_passant(),
-			});
+			moves.push(Move::new(start, target, MoveFlags::en_passant()));
 		}
 	}
 }
@@ -548,11 +505,7 @@ fn pawn_double_moves(position: &Position, pins: Board, moves: &mut Vec<Move>) {
 		let target = start << (16 * MOVE_DIRECTION[to_move_color as usize]);
 		let required_empty = skip_square | target;
 		if (total_occupancy & required_empty).is_empty() && pin_limitation.is_occupied(target) {
-			moves.push(Move {
-				start,
-				target,
-				flags: MoveFlags::double_pawn_push(),
-			});
+			moves.push(Move::new(start, target, MoveFlags::double_pawn_push()));
 		}
 	}
 }
@@ -763,46 +716,46 @@ mod test {
 
 		let rook_square = Square::from_algebraic_notation("c4");
 		let expected_moves = vec![
-			Move {
-				start: rook_square,
-				target: Square::from_algebraic_notation("c2"),
-				flags: MoveFlags::capture(),
-			},
-			Move {
-				start: rook_square,
-				target: Square::from_algebraic_notation("c3"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: rook_square,
-				target: Square::from_algebraic_notation("a4"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: rook_square,
-				target: Square::from_algebraic_notation("b4"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: rook_square,
-				target: Square::from_algebraic_notation("d4"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: rook_square,
-				target: Square::from_algebraic_notation("e4"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: rook_square,
-				target: Square::from_algebraic_notation("c5"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: rook_square,
-				target: Square::from_algebraic_notation("c6"),
-				flags: MoveFlags::capture(),
-			},
+			Move::new(
+				rook_square,
+				Square::from_algebraic_notation("c2"),
+				MoveFlags::capture(),
+			),
+			Move::new(
+				rook_square,
+				Square::from_algebraic_notation("c3"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				rook_square,
+				Square::from_algebraic_notation("a4"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				rook_square,
+				Square::from_algebraic_notation("b4"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				rook_square,
+				Square::from_algebraic_notation("d4"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				rook_square,
+				Square::from_algebraic_notation("e4"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				rook_square,
+				Square::from_algebraic_notation("c5"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				rook_square,
+				Square::from_algebraic_notation("c6"),
+				MoveFlags::capture(),
+			),
 		];
 
 		let actual_moves: Vec<Move> = generate_moves::<false>(&position)
@@ -819,26 +772,26 @@ mod test {
 
 		let knight_square = Square::from_algebraic_notation("g3");
 		let expected_moves = vec![
-			Move {
-				start: knight_square,
-				target: Square::from_algebraic_notation("h1"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: knight_square,
-				target: Square::from_algebraic_notation("e4"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: knight_square,
-				target: Square::from_algebraic_notation("f5"),
-				flags: MoveFlags::capture(),
-			},
-			Move {
-				start: knight_square,
-				target: Square::from_algebraic_notation("h5"),
-				flags: MoveFlags::capture(),
-			},
+			Move::new(
+				knight_square,
+				Square::from_algebraic_notation("h1"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				knight_square,
+				Square::from_algebraic_notation("e4"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				knight_square,
+				Square::from_algebraic_notation("f5"),
+				MoveFlags::capture(),
+			),
+			Move::new(
+				knight_square,
+				Square::from_algebraic_notation("h5"),
+				MoveFlags::capture(),
+			),
 		];
 
 		let actual_moves: Vec<Move> = generate_moves::<false>(&position)
@@ -855,56 +808,56 @@ mod test {
 
 		let bishop_square = Square::from_algebraic_notation("e4");
 		let expected_moves = vec![
-			Move {
-				start: bishop_square,
-				target: Square::from_algebraic_notation("h1"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: bishop_square,
-				target: Square::from_algebraic_notation("g2"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: bishop_square,
-				target: Square::from_algebraic_notation("d3"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: bishop_square,
-				target: Square::from_algebraic_notation("f3"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: bishop_square,
-				target: Square::from_algebraic_notation("d5"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: bishop_square,
-				target: Square::from_algebraic_notation("f5"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: bishop_square,
-				target: Square::from_algebraic_notation("c6"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: bishop_square,
-				target: Square::from_algebraic_notation("g6"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: bishop_square,
-				target: Square::from_algebraic_notation("b7"),
-				flags: MoveFlags::capture(),
-			},
-			Move {
-				start: bishop_square,
-				target: Square::from_algebraic_notation("h7"),
-				flags: MoveFlags::quiet_move(),
-			},
+			Move::new(
+				bishop_square,
+				Square::from_algebraic_notation("h1"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				bishop_square,
+				Square::from_algebraic_notation("g2"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				bishop_square,
+				Square::from_algebraic_notation("d3"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				bishop_square,
+				Square::from_algebraic_notation("f3"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				bishop_square,
+				Square::from_algebraic_notation("d5"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				bishop_square,
+				Square::from_algebraic_notation("f5"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				bishop_square,
+				Square::from_algebraic_notation("c6"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				bishop_square,
+				Square::from_algebraic_notation("g6"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				bishop_square,
+				Square::from_algebraic_notation("b7"),
+				MoveFlags::capture(),
+			),
+			Move::new(
+				bishop_square,
+				Square::from_algebraic_notation("h7"),
+				MoveFlags::quiet_move(),
+			),
 		];
 
 		let actual_moves: Vec<Move> = generate_moves::<false>(&position)
@@ -921,111 +874,111 @@ mod test {
 
 		let queen_square = Square::from_algebraic_notation("e3");
 		let expected_moves = vec![
-			Move {
-				start: queen_square,
-				target: Square::from_algebraic_notation("c1"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: queen_square,
-				target: Square::from_algebraic_notation("e1"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: queen_square,
-				target: Square::from_algebraic_notation("d2"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: queen_square,
-				target: Square::from_algebraic_notation("e2"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: queen_square,
-				target: Square::from_algebraic_notation("f2"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: queen_square,
-				target: Square::from_algebraic_notation("a3"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: queen_square,
-				target: Square::from_algebraic_notation("b3"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: queen_square,
-				target: Square::from_algebraic_notation("c3"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: queen_square,
-				target: Square::from_algebraic_notation("d3"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: queen_square,
-				target: Square::from_algebraic_notation("f3"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: queen_square,
-				target: Square::from_algebraic_notation("g3"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: queen_square,
-				target: Square::from_algebraic_notation("h3"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: queen_square,
-				target: Square::from_algebraic_notation("d4"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: queen_square,
-				target: Square::from_algebraic_notation("e4"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: queen_square,
-				target: Square::from_algebraic_notation("f4"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: queen_square,
-				target: Square::from_algebraic_notation("c5"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: queen_square,
-				target: Square::from_algebraic_notation("e5"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: queen_square,
-				target: Square::from_algebraic_notation("g5"),
-				flags: MoveFlags::capture(),
-			},
-			Move {
-				start: queen_square,
-				target: Square::from_algebraic_notation("b6"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: queen_square,
-				target: Square::from_algebraic_notation("e6"),
-				flags: MoveFlags::capture(),
-			},
-			Move {
-				start: queen_square,
-				target: Square::from_algebraic_notation("a7"),
-				flags: MoveFlags::capture(),
-			},
+			Move::new(
+				queen_square,
+				Square::from_algebraic_notation("c1"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				queen_square,
+				Square::from_algebraic_notation("e1"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				queen_square,
+				Square::from_algebraic_notation("d2"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				queen_square,
+				Square::from_algebraic_notation("e2"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				queen_square,
+				Square::from_algebraic_notation("f2"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				queen_square,
+				Square::from_algebraic_notation("a3"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				queen_square,
+				Square::from_algebraic_notation("b3"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				queen_square,
+				Square::from_algebraic_notation("c3"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				queen_square,
+				Square::from_algebraic_notation("d3"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				queen_square,
+				Square::from_algebraic_notation("f3"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				queen_square,
+				Square::from_algebraic_notation("g3"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				queen_square,
+				Square::from_algebraic_notation("h3"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				queen_square,
+				Square::from_algebraic_notation("d4"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				queen_square,
+				Square::from_algebraic_notation("e4"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				queen_square,
+				Square::from_algebraic_notation("f4"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				queen_square,
+				Square::from_algebraic_notation("c5"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				queen_square,
+				Square::from_algebraic_notation("e5"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				queen_square,
+				Square::from_algebraic_notation("g5"),
+				MoveFlags::capture(),
+			),
+			Move::new(
+				queen_square,
+				Square::from_algebraic_notation("b6"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				queen_square,
+				Square::from_algebraic_notation("e6"),
+				MoveFlags::capture(),
+			),
+			Move::new(
+				queen_square,
+				Square::from_algebraic_notation("a7"),
+				MoveFlags::capture(),
+			),
 		];
 
 		let actual_moves: Vec<Move> = generate_moves::<false>(&position)
@@ -1042,16 +995,16 @@ mod test {
 
 		let king_square = Square::from_algebraic_notation("g1");
 		let expected_moves = vec![
-			Move {
-				start: king_square,
-				target: Square::from_algebraic_notation("f2"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: king_square,
-				target: Square::from_algebraic_notation("g2"),
-				flags: MoveFlags::capture(),
-			},
+			Move::new(
+				king_square,
+				Square::from_algebraic_notation("f2"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				king_square,
+				Square::from_algebraic_notation("g2"),
+				MoveFlags::capture(),
+			),
 		];
 
 		let actual_moves: Vec<Move> = generate_moves::<false>(&position)
@@ -1096,11 +1049,11 @@ mod test {
 			Position::from_fen("2k5/pp6/1b1nn3/6p1/5pb1/6P1/r6P/R3K2R w KQ - 0 1").unwrap();
 
 		let king_square = Square::from_algebraic_notation("e1");
-		let expected_moves = vec![Move {
-			start: king_square,
-			target: Square::from_algebraic_notation("f1"),
-			flags: MoveFlags::quiet_move(),
-		}];
+		let expected_moves = vec![Move::new(
+			king_square,
+			Square::from_algebraic_notation("f1"),
+			MoveFlags::quiet_move(),
+		)];
 
 		let actual_moves: Vec<Move> = generate_moves::<false>(&position)
 			.into_iter()
@@ -1117,16 +1070,16 @@ mod test {
 
 		let queen_square = Square::from_algebraic_notation("d2");
 		let expected_moves = vec![
-			Move {
-				start: queen_square,
-				target: Square::from_algebraic_notation("c3"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: queen_square,
-				target: Square::from_algebraic_notation("b4"),
-				flags: MoveFlags::capture(),
-			},
+			Move::new(
+				queen_square,
+				Square::from_algebraic_notation("c3"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				queen_square,
+				Square::from_algebraic_notation("b4"),
+				MoveFlags::capture(),
+			),
 		];
 
 		let actual_moves: Vec<Move> = generate_moves::<false>(&position)
@@ -1142,11 +1095,11 @@ mod test {
 		let position = Position::from_fen("3k4/8/8/KPp4r/8/8/8/8 w - c6 0 1").unwrap();
 
 		let pawn_square = Square::from_algebraic_notation("b5");
-		let expected_moves = vec![Move {
-			start: pawn_square,
-			target: Square::from_algebraic_notation("b6"),
-			flags: MoveFlags::quiet_move(),
-		}];
+		let expected_moves = vec![Move::new(
+			pawn_square,
+			Square::from_algebraic_notation("b6"),
+			MoveFlags::quiet_move(),
+		)];
 
 		let actual_moves: Vec<Move> = generate_moves::<false>(&position)
 			.into_iter()
@@ -1162,16 +1115,16 @@ mod test {
 
 		let pawn_square = Square::from_algebraic_notation("g6");
 		let expected_moves = vec![
-			Move {
-				start: pawn_square,
-				target: Square::from_algebraic_notation("g5"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: pawn_square,
-				target: Square::from_algebraic_notation("h5"),
-				flags: MoveFlags::capture(),
-			},
+			Move::new(
+				pawn_square,
+				Square::from_algebraic_notation("g5"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				pawn_square,
+				Square::from_algebraic_notation("h5"),
+				MoveFlags::capture(),
+			),
 		];
 
 		let actual_moves: Vec<Move> = generate_moves::<false>(&position)
@@ -1189,16 +1142,16 @@ mod test {
 
 		let pawn_square = Square::from_algebraic_notation("b7");
 		let expected_moves = vec![
-			Move {
-				start: pawn_square,
-				target: Square::from_algebraic_notation("b6"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: pawn_square,
-				target: Square::from_algebraic_notation("b5"),
-				flags: MoveFlags::double_pawn_push(),
-			},
+			Move::new(
+				pawn_square,
+				Square::from_algebraic_notation("b6"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				pawn_square,
+				Square::from_algebraic_notation("b5"),
+				MoveFlags::double_pawn_push(),
+			),
 		];
 
 		let actual_move: Vec<Move> = generate_moves::<false>(&position)
@@ -1216,16 +1169,16 @@ mod test {
 
 		let pawn_square = Square::from_algebraic_notation("f4");
 		let expected_moves = vec![
-			Move {
-				start: pawn_square,
-				target: Square::from_algebraic_notation("f3"),
-				flags: MoveFlags::quiet_move(),
-			},
-			Move {
-				start: pawn_square,
-				target: Square::from_algebraic_notation("g3"),
-				flags: MoveFlags::en_passant(),
-			},
+			Move::new(
+				pawn_square,
+				Square::from_algebraic_notation("f3"),
+				MoveFlags::quiet_move(),
+			),
+			Move::new(
+				pawn_square,
+				Square::from_algebraic_notation("g3"),
+				MoveFlags::en_passant(),
+			),
 		];
 
 		let actual_move: Vec<Move> = generate_moves::<false>(&position)
@@ -1243,46 +1196,46 @@ mod test {
 
 		let pawn_square = Square::from_algebraic_notation("h7");
 		let expected_moves = vec![
-			Move {
-				start: pawn_square,
-				target: Square::from_algebraic_notation("h8"),
-				flags: MoveFlags::knight_promotion(),
-			},
-			Move {
-				start: pawn_square,
-				target: Square::from_algebraic_notation("h8"),
-				flags: MoveFlags::bishop_promotion(),
-			},
-			Move {
-				start: pawn_square,
-				target: Square::from_algebraic_notation("h8"),
-				flags: MoveFlags::rook_promotion(),
-			},
-			Move {
-				start: pawn_square,
-				target: Square::from_algebraic_notation("h8"),
-				flags: MoveFlags::queen_promotion(),
-			},
-			Move {
-				start: pawn_square,
-				target: Square::from_algebraic_notation("g8"),
-				flags: MoveFlags::knight_promotion_capture(),
-			},
-			Move {
-				start: pawn_square,
-				target: Square::from_algebraic_notation("g8"),
-				flags: MoveFlags::bishop_promotion_capture(),
-			},
-			Move {
-				start: pawn_square,
-				target: Square::from_algebraic_notation("g8"),
-				flags: MoveFlags::rook_promotion_capture(),
-			},
-			Move {
-				start: pawn_square,
-				target: Square::from_algebraic_notation("g8"),
-				flags: MoveFlags::queen_promotion_capture(),
-			},
+			Move::new(
+				pawn_square,
+				Square::from_algebraic_notation("h8"),
+				MoveFlags::knight_promotion(),
+			),
+			Move::new(
+				pawn_square,
+				Square::from_algebraic_notation("h8"),
+				MoveFlags::bishop_promotion(),
+			),
+			Move::new(
+				pawn_square,
+				Square::from_algebraic_notation("h8"),
+				MoveFlags::rook_promotion(),
+			),
+			Move::new(
+				pawn_square,
+				Square::from_algebraic_notation("h8"),
+				MoveFlags::queen_promotion(),
+			),
+			Move::new(
+				pawn_square,
+				Square::from_algebraic_notation("g8"),
+				MoveFlags::knight_promotion_capture(),
+			),
+			Move::new(
+				pawn_square,
+				Square::from_algebraic_notation("g8"),
+				MoveFlags::bishop_promotion_capture(),
+			),
+			Move::new(
+				pawn_square,
+				Square::from_algebraic_notation("g8"),
+				MoveFlags::rook_promotion_capture(),
+			),
+			Move::new(
+				pawn_square,
+				Square::from_algebraic_notation("g8"),
+				MoveFlags::queen_promotion_capture(),
+			),
 		];
 
 		let actual_moves: Vec<Move> = generate_moves::<false>(&position)
