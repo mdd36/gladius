@@ -216,7 +216,7 @@ impl Move {
 			flags = MoveFlags::capture();
 		}
 
-		match move_str.get(5..5) {
+		match move_str.get(4..5) {
 			Some("q") | Some("Q") => {
 				if capture {
 					flags = MoveFlags::queen_promotion_capture();

@@ -167,6 +167,10 @@ impl GladiusEngine {
 				.min(self.opts.max_move_time)
 		})
 	}
+
+	pub fn show_fen(&self) -> String {
+		self.current_position.to_fen()
+	}
 }
 
 impl Engine for GladiusEngine {

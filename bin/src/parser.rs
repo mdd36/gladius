@@ -22,6 +22,7 @@ pub enum UciCommand {
 	Debug(bool),
 	Display,
 	Evaluate,
+	Fen,
 	Go(GoAction),
 	Help,
 	IsReady,
@@ -40,6 +41,7 @@ impl std::fmt::Debug for UciCommand {
 			Self::Debug(_) => write!(f, "Debug"),
 			Self::Display => write!(f, "Display"),
 			Self::Evaluate => write!(f, "Evaluate"),
+			Self::Fen => write!(f, "Fen"),
 			Self::Go { .. } => write!(f, "Go"),
 			Self::Help => write!(f, "Help"),
 			Self::IsReady => write!(f, "IsReady"),
@@ -74,6 +76,7 @@ pub fn parse_input(input: String) -> Result<UciCommand, String> {
 			"go" => return parse_go(split),
 			"setoption" => return parse_setopt(split),
 			"evaluate" => return Ok(UciCommand::Evaluate),
+			"fen" => return Ok(UciCommand::Fen),
 			_ => continue,
 		}
 	}

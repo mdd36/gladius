@@ -142,6 +142,9 @@ fn main() {
 			UciCommand::Debug(debug) => {
 				engine.set_opt(EngineOption::Debug(debug));
 			}
+			UciCommand::Fen => {
+				println!("fen {}", engine.show_fen());
+			}
 			UciCommand::IsReady => {
 				engine.ready();
 			}

@@ -427,6 +427,94 @@ impl Position {
 		Ok(position)
 	}
 
+	pub fn to_fen(&self) -> String {
+		let mut fen_string = String::with_capacity(60);
+
+		let combined_board =
+			self.get_board_for_color(Color::White) | self.get_board_for_color(Color::Black);
+
+		let mut skipped = 0;
+		for rank in (0u8..8).rev() {
+			// Rev so black's side is printed first
+			for file in 0u8..8 {
+				let square = Square::from_rank_and_file(rank, file);
+				if (combined_board & square).is_empty() {
+					skipped += 1;
+					continue;
+				}
+
+				if skipped > 0 {
+					fen_string.push_str(&skipped.to_string());
+				}
+				skipped = 0;
+
+				// Unicode offset for the black pieces is 6 since there's six unique
+				// chess pieces and white comes first
+				let color = self.color_on(square).unwrap();
+				let piece = self.piece_on(square).unwrap();
+
+				let piece_char = match color {
+					Color::White => piece.to_char().to_uppercase(),
+					Color::Black => piece.to_char().to_owned(),
+				};
+				fen_string.push_str(&piece_char);
+			}
+
+			if skipped > 0 {
+				fen_string.push_str(&skipped.to_string());
+			}
+			if rank > 0 {
+				skipped = 0;
+				fen_string.push('/');
+			}
+		}
+		fen_string.push(' ');
+
+		match self.metadata.to_move() {
+			Color::White => fen_string.push('w'),
+			Color::Black => fen_string.push('b'),
+		}
+		fen_string.push(' ');
+
+		if self.can_castle(Color::White, CastleSide::King) {
+			fen_string.push('K');
+		}
+
+		if self.can_castle(Color::White, CastleSide::Queen) {
+			fen_string.push('Q');
+		}
+
+		if self.can_castle(Color::Black, CastleSide::King) {
+			fen_string.push('k');
+		}
+
+		if self.can_castle(Color::Black, CastleSide::Queen) {
+			fen_string.push('q');
+		}
+
+		if fen_string.ends_with(' ') {
+			// No castling rights left, to the last thing in the string
+			// is the space after to move.
+			fen_string.push('-');
+		}
+
+		fen_string.push(' ');
+
+		if let Some(square) = self.metadata.en_passant_square() {
+			fen_string.push_str(&square.as_algebraic_notation());
+		} else {
+			fen_string.push('-');
+		}
+
+		fen_string.push(' ');
+
+		fen_string.push_str(&format!("{}", self.metadata.half_move_clock()));
+		fen_string.push(' ');
+		fen_string.push_str(&self.full_move_clock.to_string());
+
+		fen_string
+	}
+
 	pub fn get_board_for_color(&self, color: Color) -> Board {
 		self.boards[color as usize]
 	}
