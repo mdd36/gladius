@@ -160,7 +160,7 @@ impl GladiusEngine {
 		time_remaining.map_or(self.opts.max_move_time, |total_time_remaining_millis| {
 			let expected_moves_remaining = AVERAGE_MOVES_PER_GAME
 				.saturating_sub(self.current_position.full_move_clock as u64)
-				.min(MIN_MOVES_REMAINING);
+				.max(MIN_MOVES_REMAINING);
 			let millis_for_move = total_time_remaining_millis as u64 / expected_moves_remaining;
 			Duration::from_millis(millis_for_move)
 				.saturating_sub(self.opts.move_overhead)
