@@ -12,6 +12,8 @@ use gladius_core::{
 use parser::{parse_input, UciCommand};
 use rustyline::{error::ReadlineError, Config, DefaultEditor};
 
+use crate::parser::GoAction;
+
 const CLI_BANNER: &str = r#"
  _____ _           _ _           
 |  __ \ |         | (_)          
@@ -31,7 +33,8 @@ const HELP_DIALOG: &str = r#"
 Supported Universal Chess Interface (UCI) Commands
 
 uci
-    Tell the engine to start in UCI mode
+    Tell the engine to start in UCI mode. The engine will respond with
+		some identifying information and the list of supported options.
 debug [ on | off ]
     Switch debug mode on or off. In debug mode, the engine will forward
     additional information to the front end to help with debugging.
@@ -54,14 +57,13 @@ position [ fen <fenstring> | startpos ] moves <move 1> ... <move n>
     the move of a pawn from e2 to e4 is represented as "e2e4".
 display
 		Show the current position represented as a chess board.
-perft [ depth <x> ]
+go perft [depth <x>]
 		Run a perft test on the current position to the specified depth.
-go [ wtime <x> ] [ btime <x> ] [ winc <x> ] [ binc <x> ] 
-      [ depth <x> | nodes <x> | movetime <x> | infinite ]
-    Start calculating what the best next move is. wtime specifies the number
-    of milliseconds left on white's clock, and btime is the same for black.
-    winc specifies the increment per move for white, and binc is the same for
-    black. depth tells the engine number of half moves into the future to
+go [ wtime <x> ] [ btime <x> ] [ winc <x> ] [ binc <x> ] [ depth <x> | nodes <x> | movetime <x> | infinite ]
+		Start calculating what the best next move is. wtime specifies
+		the number of milliseconds left on white's clock, and btime is the same for
+		black. winc specifies the increment per move for white, and binc is the same
+		for black. depth tells the engine number of half moves into the future to
     search. nodes will limit the search to exactly the provided number of
     nodes. movetime will limit the engine's search to the provided number of
     milliseconds. infinite will let the engine search indefinitely until it
@@ -71,6 +73,10 @@ stop
     by the engine.
 ponderhit
     Not supported by the engine.
+evaluate
+		Display the engine's current evaluation of ths position. The evaluation is
+		always from the perspective of the player to move, not necessarily the side
+		that the engine is playing.
 quit
     Exit the program.
 "#;
@@ -133,7 +139,6 @@ fn main() {
 			UciCommand::Display => {
 				println!("{}", engine.display());
 			}
-			UciCommand::Perft(depth) => engine.perft(depth),
 			UciCommand::Debug(debug) => {
 				engine.set_opt(EngineOption::Debug(debug));
 			}
@@ -143,7 +148,10 @@ fn main() {
 			UciCommand::SetOption(option) => {
 				engine.set_opt(option);
 			}
-			UciCommand::Go(parameters) => {
+			UciCommand::Go(GoAction::Perft(depth)) => {
+				engine.perft(depth);
+			}
+			UciCommand::Go(parser::GoAction::Search(parameters)) => {
 				engine.go(parameters);
 			}
 			UciCommand::Stop => {

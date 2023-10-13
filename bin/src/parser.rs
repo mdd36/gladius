@@ -11,42 +11,45 @@ use gladius_core::{
 	position::{moves::Move, Position},
 };
 
+pub enum GoAction {
+	Perft(u8),
+	Search(SearchParameters),
+}
+
 // For the official spec, see
 // https://gist.github.com/DOBRO/2592c6dad754ba67e6dcaec8c90165bf#file-uci-protocol-specification-txt-L41
 pub enum UciCommand {
-	UCI,
 	Debug(bool),
-	IsReady,
 	Display,
-	Perft(u8),
-	SetOption(EngineOption),
-	Register,
+	Evaluate,
+	Go(GoAction),
+	Help,
+	IsReady,
 	NewGame,
 	Position(Position, Vec<Move>),
-	Go(SearchParameters),
-	Stop,
 	Quit,
-	Help,
-	Evaluate,
+	Register,
+	SetOption(EngineOption),
+	Stop,
+	UCI,
 }
 
 impl std::fmt::Debug for UciCommand {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			Self::Display => write!(f, "Display"),
-			Self::Perft(_) => write!(f, "Perft"),
-			Self::UCI => write!(f, "UCI"),
 			Self::Debug(_) => write!(f, "Debug"),
+			Self::Display => write!(f, "Display"),
+			Self::Evaluate => write!(f, "Evaluate"),
+			Self::Go { .. } => write!(f, "Go"),
+			Self::Help => write!(f, "Help"),
 			Self::IsReady => write!(f, "IsReady"),
-			Self::SetOption { .. } => write!(f, "SetOption"),
-			Self::Register => write!(f, "Register"),
 			Self::NewGame => write!(f, "NewGame"),
 			Self::Position { .. } => write!(f, "Position"),
-			Self::Go { .. } => write!(f, "Go"),
-			Self::Stop => write!(f, "Stop"),
 			Self::Quit => write!(f, "Quit"),
-			Self::Help => write!(f, "Help"),
-			Self::Evaluate => write!(f, "Evaluate"),
+			Self::Register => write!(f, "Register"),
+			Self::SetOption { .. } => write!(f, "SetOption"),
+			Self::Stop => write!(f, "Stop"),
+			Self::UCI => write!(f, "UCI"),
 		}
 	}
 }
@@ -68,7 +71,6 @@ pub fn parse_input(input: String) -> Result<UciCommand, String> {
 			"register" => return Ok(UciCommand::Register),
 			"help" => return Ok(UciCommand::Help),
 			"d" | "display" => return Ok(UciCommand::Display),
-			"perft" => return Ok(UciCommand::Perft(parse(split.next())?)),
 			"go" => return parse_go(split),
 			"setoption" => return parse_setopt(split),
 			"evaluate" => return Ok(UciCommand::Evaluate),
@@ -140,6 +142,7 @@ fn parse_go(mut cmd: SplitAsciiWhitespace<'_>) -> Result<UciCommand, String> {
 
 	while let Some(parameter_name) = cmd.next() {
 		match parameter_name {
+			"perft" => return parse_perf(cmd),
 			"wtime" => params.wtime = Some(parse(cmd.next())?),
 			"btime" => params.btime = Some(parse(cmd.next())?),
 			"winc" => params.winc = Some(parse(cmd.next())?),
@@ -151,7 +154,32 @@ fn parse_go(mut cmd: SplitAsciiWhitespace<'_>) -> Result<UciCommand, String> {
 		}
 	}
 
-	Ok(UciCommand::Go(params))
+	Ok(UciCommand::Go(GoAction::Search(params)))
+}
+
+fn parse_perf(mut cmd: SplitAsciiWhitespace<'_>) -> Result<UciCommand, String> {
+	match cmd.next() {
+		Some("depth") => {}
+		Some(other) => {
+			return Err(format!(r#"expecting "depth", but found {other}"#));
+		}
+		None => return Err(r#"expected "depth", but it was missing"#.to_owned()),
+	}
+	let depth = match cmd.next() {
+		Some(d) => d,
+		None => {
+			return Err(r#"missing parameter "depth""#.to_owned());
+		}
+	};
+
+	let depth = match depth.parse() {
+		Ok(d) => d,
+		Err(e) => {
+			return Err(format!("could not parse {depth} to a number: {e}"));
+		}
+	};
+
+	Ok(UciCommand::Go(GoAction::Perft(depth)))
 }
 
 fn parse_setopt(mut cmd: SplitAsciiWhitespace<'_>) -> Result<UciCommand, String> {
