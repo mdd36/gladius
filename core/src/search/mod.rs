@@ -262,8 +262,10 @@ pub fn search(
 	}
 	let saved_position = transposition_table.get(position.zobrist_hash);
 	if let Some(entry) = saved_position {
-		if entry.depth >= parameters.ply {
-			return SearchResult::from(entry);
+		match entry.score {
+			Score::Exact(_) => return SearchResult::from(entry),
+			Score::UpperBound(score) => parameters.alpha = std::cmp::max(parameters.alpha, score),
+			Score::LowerBound(score) => parameters.beta = std::cmp::min(parameters.beta, score),
 		}
 	};
 
