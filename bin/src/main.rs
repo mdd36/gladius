@@ -212,7 +212,6 @@ impl ToUciString for EngineOption {
 			Self::TableSize(_) => "name Hash type spin min 0 max 512 default 4",
 			Self::MoveOverhead(_) => "name MoveOverhead type spin min 0 default 0",
 			Self::Threads(_) => "name Threads type spin min 1 max 4 default 4",
-			Self::MaxMoveTime(_) => "name MaxMoveTime type spin min 100 default 5000",
 			Self::Debug(_) => "name Debug type check default false",
 		}
 		.to_owned()

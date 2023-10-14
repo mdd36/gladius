@@ -231,12 +231,6 @@ fn parse_setopt(mut cmd: SplitAsciiWhitespace<'_>) -> Result<UciCommand, String>
 				.map_err(|_| "specified thread count isn't supported")?;
 			EngineOption::Threads(max_thread_count)
 		}
-		"MaxMoveTime" => {
-			let max_move_time_millis = value
-				.parse()
-				.map_err(|_| "Provided value isn't a non-negative number")?;
-			EngineOption::MaxMoveTime(Duration::from_millis(max_move_time_millis))
-		}
 		opt => return Err(format!("unsupported option: {opt}")),
 	};
 

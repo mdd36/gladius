@@ -61,7 +61,6 @@ pub enum EngineOption {
 	AnalyzeMode(bool),
 	MoveOverhead(Duration),
 	Threads(u8),
-	MaxMoveTime(Duration),
 }
 
 impl EngineOption {
@@ -71,7 +70,6 @@ impl EngineOption {
 			Self::AnalyzeMode(false),
 			Self::MoveOverhead(Duration::ZERO),
 			Self::Threads(4),
-			Self::MaxMoveTime(Duration::MAX),
 		]
 		.into_iter()
 	}
@@ -84,7 +82,6 @@ pub struct EngineOpts {
 	pub analyze_mode: bool,
 	pub move_overhead: Duration,
 	pub threads: u8,
-	pub max_move_time: Duration,
 }
 
 impl Default for EngineOpts {
@@ -95,7 +92,6 @@ impl Default for EngineOpts {
 			analyze_mode: false,
 			threads: 4,
 			move_overhead: Duration::ZERO,
-			max_move_time: Duration::from_secs(5),
 		}
 	}
 }
@@ -157,14 +153,12 @@ impl GladiusEngine {
 			Color::White => search_options.wtime,
 		};
 
-		time_remaining.map_or(self.opts.max_move_time, |total_time_remaining_millis| {
+		time_remaining.map_or(Duration::MAX, |total_time_remaining_millis| {
 			let expected_moves_remaining = AVERAGE_MOVES_PER_GAME
 				.saturating_sub(self.current_position.full_move_clock as u64)
 				.max(MIN_MOVES_REMAINING);
 			let millis_for_move = total_time_remaining_millis as u64 / expected_moves_remaining;
-			Duration::from_millis(millis_for_move)
-				.saturating_sub(self.opts.move_overhead)
-				.min(self.opts.max_move_time)
+			Duration::from_millis(millis_for_move).saturating_sub(self.opts.move_overhead)
 		})
 	}
 
@@ -354,7 +348,6 @@ impl Engine for GladiusEngine {
 			EngineOption::AnalyzeMode(is_enabled) => self.opts.analyze_mode = is_enabled,
 			EngineOption::MoveOverhead(overhead) => self.opts.move_overhead = overhead,
 			EngineOption::Threads(count) => self.opts.threads = count,
-			EngineOption::MaxMoveTime(move_time) => self.opts.max_move_time = move_time,
 		}
 	}
 
