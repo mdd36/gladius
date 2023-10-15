@@ -88,7 +88,7 @@ pub fn evaluate_position_verbose(position: &Position) -> Evaluation {
 
 /// Get a float that represents the current phase of the game based
 /// on remaining material. Approach is inspired by the CPW:
-/// https://www.chessprogramming.org/Tapered_Eval
+/// <https://www.chessprogramming.org/Tapered_Eval>
 fn game_phase(position: &Position) -> f64 {
 	let mut phase = 0;
 	phase += position.get_board_for_piece(Piece::Rook).count_ones()

@@ -24,12 +24,12 @@ use self::{
 
 const MAX_EXTENSION_DEPTH: u8 = 4;
 const MAX_CAPTURE_VALUE: i16 = value_of_piece(Piece::Queen);
-const DELTA: i16 = 300; // Starting with 300 centipawns
+const DELTA: i16 = 3 * value_of_piece(Piece::Pawn); // Starting with 300 centipawns
 
-/// Because we're thinning our move search space using [alpha-beta pruning],
-/// the score determined in a search may be exact, and upper bound, or a
-
-/// [alpha-beta pruning]: https://www.chessprogramming.org/Alpha-Beta
+/// Because we're thinning our move search space using
+/// [alpha-beta pruning](https://www.chessprogramming.org/Alpha-Beta),
+/// the score determined in a search may be exact, and upper bound, or
+/// a lower bound.
 #[derive(Copy, Clone)]
 pub enum Score {
 	/// We've explored all options and determined an exact score.
@@ -130,6 +130,9 @@ impl From<TranspositionEntry> for SearchResult {
 	}
 }
 
+/// Once at the desired depth, run a search looking for a quiet position
+/// before scoring. This helps abate the horizon effect, which could cause Gladius
+/// to hang its pieces because we didn't see that they would be captured.
 fn quiescence(
 	position: &Position,
 	mut alpha: i16,
@@ -234,6 +237,10 @@ fn quiescence(
 	}
 }
 
+/// Start a PVS search for the best move from the current position.
+/// If given enough time (order of tens of milliseconds), this will find
+/// the best move to play in the current position along with the current
+/// positional score and the number of positions explored.
 pub fn search(
 	position: &Position,
 	position_history: &mut Vec<u64>,
@@ -365,9 +372,12 @@ pub fn search(
 	}
 }
 
+/// If we find something interesting, we might want to prod a little deeper down this line
+/// so we don't overlook an advantageous position. To prevent a runaway search, the number
+/// of time a given line can be extended is capped by [`MAX_EXTENSION_DEPTH`].
 fn extensions(num_extensions: u8, position: &Position, move_taken: &Move) -> u8 {
 	let mut extension = 0;
-	let moved_piece = position.piece_on(move_taken.target).unwrap(); // Position is post move here
+	let moved_piece = position.piece_on(move_taken.target).unwrap();
 
 	if moved_piece == Piece::Pawn
 		&& (move_taken.target.rank() == 1 || move_taken.target.rank() == 6)
@@ -379,5 +389,5 @@ fn extensions(num_extensions: u8, position: &Position, move_taken: &Move) -> u8 
 		extension += 1;
 	}
 
-	std::cmp::min(extension, MAX_EXTENSION_DEPTH - num_extensions) // Let's not get **too** wild
+	std::cmp::min(extension, MAX_EXTENSION_DEPTH - num_extensions)
 }

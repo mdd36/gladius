@@ -14,7 +14,7 @@ pub const STARTING_PAWNS: [u64; 2] = [0x000000000000ff00, 0x00ff000000000000];
 /// occurred, if there's an en passant square after the move, or if a promotion
 /// occurred during the move. See the chess programming wiki for an explanation
 /// of the different values:
-/// https://www.chessprogramming.org/Encoding_Moves#From-To_Based
+/// <https://www.chessprogramming.org/Encoding_Moves#From-To_Based>
 ///
 /// This is essentially a hand spun enum that saves spaces compared to a normal
 /// enum since it uses only 1 byte instead of the minimum of 8 bytes (1 64-bit
@@ -586,7 +586,7 @@ fn pin_mask(pins: Board, king_square: Square, to_move_square: Square) -> Board {
 /// both are attacking the same piece and hence that piece is the only thing preventing
 /// an attack on our king. Thanks to the chess programming wiki for this very clever
 /// algorithm!
-/// https://www.chessprogramming.org/Checks_and_Pinned_Pieces_(Bitboards)#Opposite_Ray-Directions
+/// <https://www.chessprogramming.org/Checks_and_Pinned_Pieces_(Bitboards)#Opposite_Ray-Directions>
 ///
 fn pins(position: &Position) -> Board {
 	let to_move_color = position.to_move();

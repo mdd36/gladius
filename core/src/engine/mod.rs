@@ -25,41 +25,86 @@ const MIN_MOVES_REMAINING: u64 = 5;
 
 #[derive(Debug, Default)]
 pub struct SearchParameters {
+	/// White's remaining time, in millis
 	pub wtime: Option<u32>,
+	/// Black's remaining time, in millis
 	pub btime: Option<u32>,
+	/// White's move increment time, in millis
 	pub winc: Option<u32>,
+	/// Black's move increment time, in millis
 	pub binc: Option<u32>,
+	/// The maximum depth to explore. Defaults to infinity.
 	pub depth: Option<u8>,
+	/// The time limit for the search. Defaults to infinity.
 	pub move_time: Option<Duration>,
+	/// Run the search infinitely, even if another condition
+	/// would stop the search. The only way to stop this search
+	/// is with [`Engine::stop`].
 	pub infinite: bool,
 }
 
 pub trait Engine {
+	/// Setup a position for play. This must be called before searching a position,
+	/// and is the only way to update the position.
 	fn setup_pos(&mut self, position: Position, move_history: Vec<Move>);
 
+	/// Clear any existing caches and reset the current position to the starting position.
 	fn new_game(&mut self);
 
+	/// Visualize the current position.
 	fn display(&self) -> String;
 
+	/// Run a [perft] test at the provided depth. Output must be sent asynchronously.
+	///
+	/// [perft]: https://www.chessprogramming.org/Perft#Divide
 	fn perft(&self, depth: u8);
 
+	/// Force the engine to stop its current search, if running. Has no effect if
+	/// the engine is idle.
 	fn stop(&self);
 
+	/// Start a search for the best move in the current position. See
+	/// [`SearchParameters`] for the available controls.
 	fn go(&self, parameters: SearchParameters);
 
+	/// Checks if the engine is ready. Awaiting the asynchronous reply will
+	/// synchronize caller with the engine, ensuring that the engine is ready
+	/// to handle further commands.
 	fn ready(&self);
 
+	/// Set one the [options for the engine][`EngineOption`] to a new value.
+	/// Each setting is idempotent.
 	fn set_opt(&mut self, option: EngineOption);
 
+	/// Without exploring any moves, apply the evaluation function to the
+	/// current position. This will send an [`AnalysisData`] instance to
+	/// the caller once complete.
 	fn evaluate(&self);
 }
 
 #[derive(Debug)]
 pub enum EngineOption {
+	/// When true, additional information about the engine will be
+	/// sent back. This is mainly for debugging the engine itself,
+	/// not to gain insight into move selection.
 	Debug(bool),
+
+	/// The maximum size, in Megabytes, to use for the
+	/// [`TranspositionTable`].
 	TableSize(usize),
+
+	/// When set, the engine will report back partial search results
+	/// and evaluations. This can help with determining why it picked
+	/// a given move.
 	AnalyzeMode(bool),
+
+	/// Reduce the time allowed to select a move to account for latency
+	/// between the engine and some final destination. For example,
+	/// when Gladius plays on Lichess, this can account for the
+	/// network latency between the server running Gladius and Lichess.
 	MoveOverhead(Duration),
+
+	/// The maximum number of threads that the engine can use.
 	Threads(u8),
 }
 
@@ -76,6 +121,7 @@ impl EngineOption {
 }
 
 /// Various flags and values that affect engine behavior.
+/// See [`EngineOption`] for an explanation of each field.
 pub struct EngineOpts {
 	pub debug: bool,
 	pub table_size: usize,

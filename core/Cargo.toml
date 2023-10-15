@@ -3,6 +3,7 @@ name = "gladius_core"
 version = "0.1.0"
 edition = "2021"
 authors = [ "Matthew Dickson hi@mattdickson.io"]
+documentation = "https://mattdickson.io/gladius/docs/"
 
 [dependencies]
 rand = { version = "0.8", features = [ "small_rng" ] }

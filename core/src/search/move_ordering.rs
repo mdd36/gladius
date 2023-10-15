@@ -20,14 +20,16 @@ impl KillerTable {
 				if current_entries.contains(&mov) {
 					return;
 				}
-				current_entries[1] = current_entries[0];
-				current_entries[0] = mov;
+
+				if current_entries.len() == 2 {
+					current_entries.pop();
+				}
+
+				// Yeah, the insert means a shift, but since the size is
+				// capped at two we're only copying one element ¯\_(ツ)_/¯
+				current_entries.insert(0, mov);
 			})
-			// Doubling up to let us assume that the array is always length 2
-			// in the and_modify closure. Trying a single extra move isn't
-			// penalizing enough to worry, especially since the killer will
-			// hopefully trigger a beta cutoff anyway
-			.or_insert(vec![mov, mov]);
+			.or_insert(vec![mov]);
 	}
 }
 
@@ -170,5 +172,91 @@ impl<'a> Iterator for MoveIterator<'a> {
 				to_play
 			}
 		}
+	}
+}
+
+#[cfg(test)]
+mod test {
+
+	use pretty_assertions::assert_eq;
+
+	use super::*;
+
+	#[test]
+	pub fn killer_table_test() {
+		let mut table = KillerTable::default();
+
+		let position = Position::default();
+
+		// Insert some killer
+		table.insert(1, Move::from_uci_str("a2a4", &position));
+		assert_eq!(
+			table.get(1),
+			Some(vec![Move::from_uci_str("a2a4", &position)])
+		);
+
+		// Ignores duplicates
+		table.insert(1, Move::from_uci_str("a2a4", &position));
+		assert_eq!(
+			table.get(1),
+			Some(vec![Move::from_uci_str("a2a4", &position)])
+		);
+
+		// Can hold a second one
+		table.insert(1, Move::from_uci_str("b2b4", &position));
+		assert_eq!(
+			table.get(1),
+			Some(vec![
+				Move::from_uci_str("b2b4", &position),
+				Move::from_uci_str("a2a4", &position)
+			])
+		);
+
+		// Evicts the last killer when the table is full
+		table.insert(1, Move::from_uci_str("c2c4", &position));
+		assert_eq!(
+			table.get(1),
+			Some(vec![
+				Move::from_uci_str("c2c4", &position),
+				Move::from_uci_str("b2b4", &position)
+			])
+		);
+	}
+
+	#[test]
+	pub fn move_iterator_test() {
+		let position = Position::from_fen(
+			"r3k3/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQq - 1 1",
+		)
+		.unwrap();
+		let moves = vec![
+			Move::from_uci_str("e5f7", &position), // Bad capture
+			Move::from_uci_str("e5g4", &position), // Quiet
+			Move::from_uci_str("e1g1", &position), // Hash move
+			Move::from_uci_str("d2e3", &position), // Killer 1
+			Move::from_uci_str("e1c1", &position), // Killer 2
+			Move::from_uci_str("c3a4", &position), // Quiet
+			Move::from_uci_str("g2h3", &position), // Good capture
+		];
+		let killers = vec![moves[3], moves[4]];
+		let hash_move = moves[2];
+
+		let mut iterator =
+			MoveIterator::new(moves.clone(), &position, Some(hash_move), Some(killers));
+
+		assert_eq!(iterator.next(), Some(hash_move));
+		// Captures, from good to bad
+		assert_eq!(iterator.next(), Some(moves[6]));
+		assert_eq!(iterator.next(), Some(moves[0]));
+
+		// Quiet moves
+		// Yes, we look at the hash move twice, but it's less
+		// penalizing than adding a branch to check if each
+		// move is the hash move so we could skip it
+		assert_eq!(iterator.next(), Some(moves[3]));
+		assert_eq!(iterator.next(), Some(moves[4]));
+		assert_eq!(iterator.next(), Some(moves[1]));
+		assert_eq!(iterator.next(), Some(moves[2]));
+		assert_eq!(iterator.next(), Some(moves[5]));
 	}
 }

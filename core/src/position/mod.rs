@@ -497,7 +497,7 @@ impl Position {
 	/// Check if a given color can castle on a side. This check only
 	/// determines if the player has rights to castle on a given side,
 	/// not that all conditions are met. Those are deferred to the
-	/// [`gladius_core::position::moves::is_legal`] check.
+	/// move legality check.
 	pub fn can_castle(&self, color: Color, side: CastleSide) -> bool {
 		self.metadata.can_castle(color, side)
 	}

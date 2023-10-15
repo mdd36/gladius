@@ -7,6 +7,8 @@ use crate::position::{moves::Move, Position};
 
 use super::Score;
 
+const BYTES_PER_MEGABYTE: usize = 1024 * 1024;
+
 /// A single row in the transposition table.
 #[derive(Copy, Clone)]
 pub struct TranspositionEntry {
@@ -56,16 +58,17 @@ pub struct TranspositionTable {
 impl TranspositionTable {
 	/// Create a new [`TranspositionTable`] with a fixed size.  
 	/// The size limit is an upper bound, and the actual table might be smaller than
-	/// the specified size if (desired_size / size_of(Option<TranspositionEntry>)) is
-	/// far from a power of two.  
+	/// the specified size if (desired_size / size_of(Option&lt;TranspositionEntry&gt;)) is
+	/// far from a power of two. This allows us to use the fast & operation when querying
+	/// the table instead of the multicycle modulo operation.
 	/// The desired size is immediately reserved, so the table will not grow once created.
 	/// If more space is required, it must be manually resized with [`TranspositionTable::resize()`].
 	pub fn new(max_size_megabytes: usize) -> Self {
 		// To make accessing items easier, the table size is set to the nearest power of 2 that is
 		// less than or equal to the max size determined based on the size of an entry. This lets
-		// us use a simple bit mask on each key to bucketize the entry into a vector index.
-		let max_entries_for_size =
-			max_size_megabytes * 1024 * 1024 / std::mem::size_of::<Option<TranspositionEntry>>();
+		// us use a simple bit mask on each key to bucket size the entry into a vector index.
+		let max_entries_for_size = max_size_megabytes * BYTES_PER_MEGABYTE
+			/ std::mem::size_of::<Option<TranspositionEntry>>();
 		let msb_index = 64 - max_entries_for_size.leading_zeros();
 		let table_size = 2usize.pow(msb_index);
 		let table = Arc::new(RwLock::new(vec![None; table_size]));
@@ -80,8 +83,8 @@ impl TranspositionTable {
 	/// Resize the table, purging all entries in the process. The memory required for the new table
 	/// is immediately reserved, and the table won't grow after being resized.
 	pub fn resize(&mut self, max_size_megabytes: usize) {
-		let max_entries_for_size =
-			max_size_megabytes * 1024 * 1024 / std::mem::size_of::<Option<TranspositionEntry>>();
+		let max_entries_for_size = max_size_megabytes * BYTES_PER_MEGABYTE
+			/ std::mem::size_of::<Option<TranspositionEntry>>();
 		let msb_index = 64 - max_entries_for_size.leading_zeros();
 		let table_size = 2usize.pow(msb_index);
 
