@@ -202,8 +202,7 @@ impl Move {
 	/// );
 	/// ```
 	pub fn from_uci_str(move_str: &str, position: &Position) -> Move {
-		let metadata = position.metadata;
-		let color_to_move = metadata.to_move();
+		let color_to_move = position.to_move();
 		let start = Square::from_algebraic_notation(&move_str[0..2]);
 		let target = Square::from_algebraic_notation(&move_str[2..4]);
 
@@ -251,7 +250,7 @@ impl Move {
 		let piece = position.piece_on(start).unwrap();
 
 		if piece == Piece::Pawn {
-			let is_en_passant = match metadata.en_passant_square() {
+			let is_en_passant = match position.en_passant_square() {
 				Some(en_passant_square) => en_passant_square == target,
 				None => false,
 			};
@@ -315,8 +314,7 @@ impl std::fmt::Display for Move {
 /// A vector of all the moves that can be played from the current
 /// position. If the list is empty, it's checkmate!
 pub fn generate_moves<const QUIESCENT: bool>(position: &Position) -> Vec<Move> {
-	let metadata = position.metadata;
-	let to_move = metadata.to_move();
+	let to_move = position.to_move();
 
 	let mut moves = Vec::new();
 
@@ -332,13 +330,13 @@ pub fn generate_moves<const QUIESCENT: bool>(position: &Position) -> Vec<Move> {
 	standard_moves_for_piece(Piece::King, position, pins, &mut moves);
 
 	// Castling
-	if metadata.can_castle(to_move, CastleSide::King) {
+	if position.can_castle(to_move, CastleSide::King) {
 		let start = KING_START[to_move as usize];
 		let target = KING_CASTLE_SQUARE[to_move as usize];
 		moves.push(Move::new(start, target, MoveFlags::king_castling()));
 	}
 
-	if metadata.can_castle(to_move, CastleSide::Queen) {
+	if position.can_castle(to_move, CastleSide::Queen) {
 		let start = KING_START[to_move as usize];
 		let target = QUEEN_CASTLE_SQUARE[to_move as usize];
 		moves.push(Move::new(start, target, MoveFlags::queen_castling()));
@@ -371,7 +369,7 @@ pub fn generate_moves<const QUIESCENT: bool>(position: &Position) -> Vec<Move> {
 /// *so many edge cases*.
 fn standard_moves_for_piece(piece: Piece, position: &Position, pins: Board, moves: &mut Vec<Move>) {
 	let board_piece = position.get_board_for_piece(piece);
-	let to_move_color = position.metadata.to_move();
+	let to_move_color = position.to_move();
 	let to_move_color_board = position.get_board_for_color(to_move_color);
 	let opponent_board = position.get_board_for_color(!to_move_color);
 	let total_occupancy = position.get_occupancy_board();
@@ -395,14 +393,14 @@ fn standard_moves_for_piece(piece: Piece, position: &Position, pins: Board, move
 }
 
 fn pawn_single_moves(position: &Position, pins: Board, moves: &mut Vec<Move>) {
-	let to_move_color = position.metadata.to_move();
+	let to_move_color = position.to_move();
 	let board_piece = position.get_board_for_piece(Piece::Pawn);
-	let to_move_color_board = position.get_board_for_color(position.metadata.to_move());
-	let opponent_board = position.get_board_for_color(!position.metadata.to_move());
+	let to_move_color_board = position.get_board_for_color(position.to_move());
+	let opponent_board = position.get_board_for_color(!position.to_move());
 	let total_occupancy = position.get_occupancy_board();
 	let piece_of_color = board_piece & to_move_color_board;
 	let move_direction = MOVE_DIRECTION[to_move_color as usize];
-	let en_passant_square = position.metadata.en_passant_square();
+	let en_passant_square = position.en_passant_square();
 	let king_square = Square::from(position.get_board_for_piece(Piece::King) & to_move_color_board);
 	let promotion_ranks = FIRST_RANK | EIGHTH_RANK;
 
@@ -491,10 +489,10 @@ fn pawn_single_moves(position: &Position, pins: Board, moves: &mut Vec<Move>) {
 }
 
 fn pawn_double_moves(position: &Position, pins: Board, moves: &mut Vec<Move>) {
-	let to_move_color = position.metadata.to_move();
+	let to_move_color = position.to_move();
 	let board_piece =
 		position.get_board_for_piece(Piece::Pawn) & STARTING_PAWNS[to_move_color as usize];
-	let to_move_color_board = position.get_board_for_color(position.metadata.to_move());
+	let to_move_color_board = position.get_board_for_color(position.to_move());
 	let total_occupancy = position.get_occupancy_board();
 	let piece_of_color = board_piece & to_move_color_board;
 	let king_square = Square::from(position.get_board_for_piece(Piece::King) & to_move_color_board);
@@ -514,7 +512,7 @@ fn pawn_double_moves(position: &Position, pins: Board, moves: &mut Vec<Move>) {
 /// don't apply to most moves, so it's better to defer them and check the conditions
 /// later.
 fn is_legal(position: &Position, checkers: Board, proposed_move: &Move) -> bool {
-	let to_move_color = position.metadata.to_move();
+	let to_move_color = position.to_move();
 	let moved_piece = position.piece_on(proposed_move.start).unwrap();
 
 	let king_square = Square::from(
@@ -593,7 +591,7 @@ fn pin_mask(pins: Board, king_square: Square, to_move_square: Square) -> Board {
 /// https://www.chessprogramming.org/Checks_and_Pinned_Pieces_(Bitboards)#Opposite_Ray-Directions
 ///
 fn pins(position: &Position) -> Board {
-	let to_move_color = position.metadata.to_move();
+	let to_move_color = position.to_move();
 	let king_board =
 		position.get_board_for_color(to_move_color) & position.get_board_for_piece(Piece::King);
 	let king_square = Square::from(king_board);

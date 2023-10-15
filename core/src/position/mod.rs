@@ -41,7 +41,7 @@ impl From<Square> for CastleSide {
 	}
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum Color {
 	White,
 	Black,
@@ -109,7 +109,7 @@ impl Piece {
 /// 16 bits packed to represent the metadata for a given position.
 /// Packing looks like this, starting with the most significant bits:
 ///
-/// Unused extra bit (1 bit)
+/// Unused extra bit (7 bits)
 ///   Not currently used, simply fills out the u16.
 /// En Passant square (4 bits)
 ///   Where an en passant capture can occur. The first bit represents
@@ -123,25 +123,21 @@ impl Piece {
 ///   Tracks the castling rights for each side. Each bit represents
 ///   one possible castle move, in order: blacks's king side, blacks's
 ///   queen side, whites's king side, whites's queen side.
-/// Half move clock (6 bits)
-///   The number of moves since the last pawn move or capture. Used to
-///   enforce a stalemate once it reaches 50.
 ///
 /// For example, if en passant is possible on the c3 square, it's black's
 /// move, black can castle both king and queen's side, white can castle
 /// only king's side, and there's 5 moves on the half move clock, then
 /// the bit value would look like this:
 ///
-/// 0 1010 1 1011 000101
+/// 0000000 1010 1 1011
 ///
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub struct PositionMetadata(u16);
 
-const EN_PASSANT_MASK: u16 = 0b0111100000000000;
-const EN_PASSANT_SET_MASK: u16 = 0b0100000000000000;
-const TO_MOVE_MASK: u16 = 0b0000010000000000;
-const CASTLING_MASK: u16 = 0b0000001111000000;
-const HALF_CLOCK_MASK: u16 = 0b0000000000111111;
+const EN_PASSANT_MASK: u16 = 0b0000000111000000;
+const EN_PASSANT_SET_MASK: u16 = 0b0000000000100000;
+const TO_MOVE_MASK: u16 = 0b0000000000010000;
+const CASTLING_MASK: u16 = 0b0000000000001111;
 
 impl BitOrAssign<u16> for PositionMetadata {
 	fn bitor_assign(&mut self, rhs: u16) {
@@ -155,27 +151,19 @@ impl Default for PositionMetadata {
 	/// - No en passant square
 	/// - White to move
 	/// - Both sides have all their castling rights
-	/// - 0 moves on the half move block
 	fn default() -> Self {
-		Self(0b0_0000_0_1111_000000)
+		Self(0b0000000000001111)
 	}
 }
 
 impl std::fmt::Debug for PositionMetadata {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		let half_clock = self.0 & HALF_CLOCK_MASK;
-		let castling = (self.0 & CASTLING_MASK) >> 6;
-		let to_move = if self.0 & TO_MOVE_MASK == 0 {
-			"white"
-		} else {
-			"black"
-		};
-		let en_passant_bits = (self.0 & EN_PASSANT_MASK) >> 11;
-		let en_passant_possible = en_passant_bits & 0x0008 != 0;
-		let en_passant_file = (en_passant_bits & 0x0007) as u8 + ('a' as u8);
+		let castling = self.0 & CASTLING_MASK;
+		let to_move = self.to_move();
+		let en_passant_possible = self.0 & EN_PASSANT_SET_MASK != 0;
+		let en_passant_file = ((self.0 & EN_PASSANT_MASK) >> 6) as u8 + ('a' as u8);
 		let en_passant_rank = if self.0 & TO_MOVE_MASK == 0 { "6" } else { "3" };
 		f.debug_struct("PositionMetadata")
-			.field("Half Clock", &half_clock)
 			.field("Castling", &format!("{castling:b}"))
 			.field("To Move", &to_move)
 			.field("En Passant Possible", &en_passant_possible)
@@ -193,7 +181,7 @@ impl PositionMetadata {
 	}
 
 	pub fn can_castle(&self, color: Color, side: CastleSide) -> bool {
-		let castle_mask = 0b01 << (side as u16) << (2 * color as u16) << 6;
+		let castle_mask = 0b01 << (side as u16) << (2 * color as u16);
 		self.0 & castle_mask != 0
 	}
 
@@ -205,41 +193,36 @@ impl PositionMetadata {
 		}
 	}
 
-	/// Raises the half move counter by 1
-	pub fn increment_half_move(&mut self) {
-		*self = Self(self.0 + 1)
-	}
-
-	pub fn reset_move_clock(&mut self) {
-		*self = Self(self.0 & !HALF_CLOCK_MASK);
-	}
-
-	pub fn half_move_clock(&self) -> u8 {
-		(self.0 & HALF_CLOCK_MASK) as u8
-	}
-
 	pub fn toggle_to_move(&mut self) {
 		*self = Self(self.0 ^ TO_MOVE_MASK);
 	}
 
+	pub fn set_to_move(&mut self, color: Color) {
+		let to_move_bit = (color as u16) << TO_MOVE_MASK.trailing_zeros();
+		*self = Self((self.0 & !TO_MOVE_MASK) | to_move_bit);
+	}
+
+	pub fn grant_castle_rights(&mut self, color: Color, side: CastleSide) {
+		let castle_mask = 0b01 << (side as u16) << (2 * color as u16);
+		*self = Self(self.0 | castle_mask);
+	}
+
 	pub fn revoke_castling_rights_for_side(&mut self, color: Color, side: CastleSide) {
-		let castle_mask = 0b01 << (side as u16) << (2 * color as u16) << 6;
+		let castle_mask = 0b01 << (side as u16) << (2 * color as u16);
 		*self = Self(self.0 & !castle_mask);
 	}
 
 	pub fn revoke_castling_rights_for_color(&mut self, color: Color) {
-		let castle_mask = 0b11 << (2 * color as u16) << 6;
+		let castle_mask = 0b11 << (2 * color as u16);
 		*self = Self(self.0 & !castle_mask);
 	}
 
 	pub fn en_passant_square(&self) -> Option<Square> {
-		let en_passant_bits = self.0 >> 11;
-
-		if en_passant_bits & 0x8 == 0 {
+		if self.0 & EN_PASSANT_SET_MASK == 0 {
 			return None;
 		}
 
-		let file = (en_passant_bits & 0x7) as u8;
+		let file: u8 = (self.0 >> 6) as u8;
 		let rank = match self.to_move() {
 			Color::Black => 2,
 			Color::White => 5,
@@ -249,12 +232,12 @@ impl PositionMetadata {
 	}
 
 	pub fn clear_en_passant(&mut self) {
-		*self = Self(self.0 & !EN_PASSANT_MASK);
+		*self = Self(self.0 & !EN_PASSANT_MASK & !EN_PASSANT_SET_MASK);
 	}
 
 	pub fn set_en_passant_square(&mut self, square: Square) {
 		let file = square.file() as u16;
-		let shifted_file = file << 11;
+		let shifted_file = file << 6;
 
 		*self = Self(self.0 & !EN_PASSANT_MASK | EN_PASSANT_SET_MASK | shifted_file)
 	}
@@ -262,10 +245,11 @@ impl PositionMetadata {
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Position {
-	pub boards: [Board; 8],
-	pub metadata: PositionMetadata,
-	pub zobrist_hash: u64,
-	pub full_move_clock: u16,
+	boards: [Board; 8],
+	metadata: PositionMetadata,
+	zobrist_hash: u64,
+	half_move_clock: u8,
+	full_move_clock: u16,
 }
 
 impl Default for Position {
@@ -288,6 +272,7 @@ impl Default for Position {
 			boards,
 			metadata,
 			zobrist_hash,
+			half_move_clock: 0,
 			full_move_clock: 1,
 		}
 	}
@@ -314,6 +299,7 @@ impl Position {
 			boards,
 			metadata,
 			zobrist_hash,
+			half_move_clock: 0,
 			full_move_clock: 1,
 		}
 	}
@@ -379,40 +365,40 @@ impl Position {
 		}
 
 		// Who's move is it?
-		match fen_components.next().ok_or(())? {
-			"b" => position.metadata |= TO_MOVE_MASK,
-			"w" => {}
+		let to_move = match fen_components.next().ok_or(())? {
+			"b" => Color::Black,
+			"w" => Color::White,
 			_ => return Err(()),
 		};
+		position.metadata.set_to_move(to_move);
 
 		// Castling rights
 		for castle_char in fen_components.next().ok_or(())?.chars() {
-			match castle_char {
-				'k' => position.metadata |= 0x0200,
-				'q' => position.metadata |= 0x0100,
-				'K' => position.metadata |= 0x0080,
-				'Q' => position.metadata |= 0x0040,
-				_ => {}
-			}
+			let (side, color) = match castle_char {
+				'k' => (CastleSide::King, Color::Black),
+				'q' => (CastleSide::Queen, Color::Black),
+				'K' => (CastleSide::King, Color::White),
+				'Q' => (CastleSide::Queen, Color::White),
+				_ => continue,
+			};
+			position.metadata.grant_castle_rights(color, side);
 		}
 
 		// En passant
 		match fen_components.next().ok_or(())? {
 			"-" => {}
 			square => {
-				position.metadata |= 1 << 14;
-				let file = square.as_bytes()[0] - ('a' as u8);
-				position.metadata |= (file as u16) << 11;
+				let square = Square::from_algebraic_notation(square);
+				position.metadata.set_en_passant_square(square);
 			}
 		}
 
 		// Half move clock
-		let moves: u16 = fen_components
+		position.half_move_clock = fen_components
 			.next()
 			.map(|clock| clock.parse().ok())
 			.flatten()
 			.unwrap_or(0);
-		position.metadata.0 += moves;
 
 		// Full move clock
 		position.full_move_clock = fen_components
@@ -508,7 +494,7 @@ impl Position {
 
 		fen_string.push(' ');
 
-		fen_string.push_str(&format!("{}", self.metadata.half_move_clock()));
+		fen_string.push_str(&format!("{}", self.half_move_clock()));
 		fen_string.push(' ');
 		fen_string.push_str(&self.full_move_clock.to_string());
 
@@ -564,8 +550,24 @@ impl Position {
 		}
 	}
 
+	pub fn to_move(&self) -> Color {
+		self.metadata.to_move()
+	}
+
 	pub fn half_move_clock(&self) -> u8 {
-		self.metadata.half_move_clock()
+		self.half_move_clock
+	}
+
+	pub fn full_move_clock(&self) -> u16 {
+		self.full_move_clock
+	}
+
+	pub fn en_passant_square(&self) -> Option<Square> {
+		self.metadata.en_passant_square()
+	}
+
+	pub fn hash(&self) -> u64 {
+		self.zobrist_hash
 	}
 
 	pub fn any_checks(&self) -> bool {
@@ -583,48 +585,47 @@ impl Position {
 		let moved_piece = self.piece_on(next_move.start).unwrap();
 		let flags = next_move.flags;
 
-		let mut boards = self.boards.clone();
+		let mut new_position = self.to_owned();
 
 		if let Some(captured_piece) = self.piece_on(next_move.target) {
-			boards[1 - color_to_move] ^= next_move.target;
-			boards[captured_piece as usize] ^= next_move.target;
+			new_position.boards[1 - color_to_move] ^= next_move.target;
+			new_position.boards[captured_piece as usize] ^= next_move.target;
 		} else if let Some(side) = flags.castling_side() {
 			// Move the Rook also
 			let rook_move = ROOK_CASTLE_MOVE[side as usize][color_to_move];
-			boards[Piece::Rook as usize] ^= rook_move;
-			boards[color_to_move] ^= rook_move;
+			new_position.boards[Piece::Rook as usize] ^= rook_move;
+			new_position.boards[color_to_move] ^= rook_move;
 		} else if flags.is_en_passant() {
 			let captured_piece_square = next_move.target >> (8 * MOVE_DIRECTION[color_to_move]);
-			boards[Piece::Pawn as usize] ^= captured_piece_square;
-			boards[1 - color_to_move] ^= captured_piece_square;
+			new_position.boards[Piece::Pawn as usize] ^= captured_piece_square;
+			new_position.boards[1 - color_to_move] ^= captured_piece_square;
 		}
 
-		boards[color_to_move] ^= next_move.start | next_move.target;
-		boards[moved_piece as usize] ^= next_move.start | next_move.target;
+		new_position.boards[color_to_move] ^= next_move.start | next_move.target;
+		new_position.boards[moved_piece as usize] ^= next_move.start | next_move.target;
 
 		if let Some(piece) = flags.promotion_piece() {
-			boards[Piece::Pawn as usize] ^= next_move.target;
-			boards[piece as usize] ^= next_move.target;
+			new_position.boards[Piece::Pawn as usize] ^= next_move.target;
+			new_position.boards[piece as usize] ^= next_move.target;
 		}
-
-		// This will copy by value since PositionMetadata implements Copy
-		let mut metadata = self.metadata;
 
 		// Set en passant square
 		if flags.is_double_pawn_push() {
 			let en_passant_file = next_move.start.file();
 			let en_passant_rank = next_move.start.rank() as i8 + MOVE_DIRECTION[color_to_move];
 
-			metadata.set_en_passant_square(Square::from_rank_and_file(
-				en_passant_rank as u8,
-				en_passant_file,
-			));
+			new_position
+				.metadata
+				.set_en_passant_square(Square::from_rank_and_file(
+					en_passant_rank as u8,
+					en_passant_file,
+				));
 		} else {
-			metadata.clear_en_passant();
+			new_position.metadata.clear_en_passant();
 		}
 
 		// Flip to move
-		metadata.toggle_to_move();
+		new_position.metadata.toggle_to_move();
 
 		// Adjust castling rights
 		if ((next_move.start | next_move.target) & CASTLE_RIGHTS_SQUARES).has_pieces() {
@@ -632,35 +633,34 @@ impl Position {
 				for color in [Color::White, Color::Black] {
 					let rook_square = ROOKS[side as usize][color as usize];
 					if (next_move.target | next_move.start).is_occupied(rook_square) {
-						metadata.revoke_castling_rights_for_side(color, side);
+						new_position
+							.metadata
+							.revoke_castling_rights_for_side(color, side);
 					}
 				}
 			}
 		} else if moved_piece == Piece::King {
-			metadata.revoke_castling_rights_for_color(self.metadata.to_move());
+			new_position
+				.metadata
+				.revoke_castling_rights_for_color(self.metadata.to_move());
 		}
 
-		// Increment half move clock, if needed
-		if flags.is_capture() || moved_piece == Piece::Pawn {
-			metadata.reset_move_clock();
+		// Increment or reset half move clock
+		new_position.half_move_clock = if flags.is_capture() || moved_piece == Piece::Pawn {
+			0
 		} else {
-			metadata.increment_half_move();
-		}
+			self.half_move_clock + 1
+		};
 
-		let full_move_clock = match metadata.to_move() {
+		new_position.full_move_clock = match new_position.metadata.to_move() {
 			Color::White => self.full_move_clock + 1,
 			Color::Black => self.full_move_clock,
 		};
 
 		// Calculate the new hash
-		let zobrist_hash = hash_after_move(self.zobrist_hash, &self, next_move);
+		new_position.zobrist_hash = hash_after_move(&self, &new_position, next_move);
 
-		Self {
-			boards,
-			metadata,
-			zobrist_hash,
-			full_move_clock,
-		}
+		new_position
 	}
 
 	/// Print the board to the console.

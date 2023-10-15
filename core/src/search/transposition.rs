@@ -37,8 +37,8 @@ pub struct TranspositionEntry {
 impl TranspositionEntry {
 	pub fn from(position: &Position, best_move: Move, score: Score, depth: u8) -> Self {
 		Self {
-			key: position.zobrist_hash,
-			age: position.full_move_clock,
+			key: position.hash(),
+			age: position.full_move_clock(),
 			best_move,
 			score,
 			depth,

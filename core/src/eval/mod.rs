@@ -25,7 +25,7 @@ pub struct Evaluation {
 }
 
 pub fn evaluate_position(position: &Position) -> i16 {
-	let us = position.metadata.to_move();
+	let us = position.to_move();
 	let them = !us;
 
 	let our_material = material_score(position, us);
@@ -53,7 +53,7 @@ pub fn evaluate_position(position: &Position) -> i16 {
 }
 
 pub fn evaluate_position_verbose(position: &Position) -> Evaluation {
-	let us = position.metadata.to_move();
+	let us = position.to_move();
 	let them = !us;
 
 	let our_material = material_score(position, us);

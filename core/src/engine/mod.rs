@@ -148,14 +148,14 @@ impl GladiusEngine {
 	}
 
 	fn time_limit(&self, search_options: &SearchParameters) -> Duration {
-		let time_remaining = match self.current_position.metadata.to_move() {
+		let time_remaining = match self.current_position.to_move() {
 			Color::Black => search_options.btime,
 			Color::White => search_options.wtime,
 		};
 
 		time_remaining.map_or(Duration::MAX, |total_time_remaining_millis| {
 			let expected_moves_remaining = AVERAGE_MOVES_PER_GAME
-				.saturating_sub(self.current_position.full_move_clock as u64)
+				.saturating_sub(self.current_position.full_move_clock() as u64)
 				.max(MIN_MOVES_REMAINING);
 			let millis_for_move = total_time_remaining_millis as u64 / expected_moves_remaining;
 			Duration::from_millis(millis_for_move).saturating_sub(self.opts.move_overhead)
@@ -173,7 +173,7 @@ impl Engine for GladiusEngine {
 		let original_position_history = self.position_history.clone();
 
 		self.position_history.clear();
-		self.position_history.push(starting_position.zobrist_hash);
+		self.position_history.push(starting_position.hash());
 		self.current_position = starting_position;
 
 		for m in &move_history {
@@ -186,8 +186,7 @@ impl Engine for GladiusEngine {
 					return;
 				}
 			};
-			self.position_history
-				.push(self.current_position.zobrist_hash);
+			self.position_history.push(self.current_position.hash());
 		}
 	}
 

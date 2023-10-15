@@ -136,7 +136,7 @@ fn quiescence(
 	beta: i16,
 	stop: Arc<AtomicBool>,
 ) -> SearchResult {
-	let to_move = position.metadata.to_move();
+	let to_move = position.to_move();
 	let is_in_check = position.is_color_in_check(to_move);
 	let current_score = if is_in_check {
 		alpha
@@ -248,7 +248,7 @@ pub fn search(
 			position.half_move_clock(),
 			parameters.ply_from_root,
 			position_history,
-			position.zobrist_hash,
+			position.hash(),
 		) {
 		return SearchResult {
 			score: STALEMATE_SCORE,
@@ -260,7 +260,7 @@ pub fn search(
 	if parameters.ply == 0 {
 		return quiescence(position, parameters.alpha, parameters.beta, stop.clone());
 	}
-	let saved_position = transposition_table.get(position.zobrist_hash);
+	let saved_position = transposition_table.get(position.hash());
 	if let Some(entry) = saved_position {
 		match entry.score {
 			Score::Exact(_) => return SearchResult::from(entry),
@@ -280,7 +280,7 @@ pub fn search(
 	let possible_moves = generate_moves::<false>(position);
 
 	if possible_moves.is_empty() {
-		if position.is_color_in_check(position.metadata.to_move()) {
+		if position.is_color_in_check(position.to_move()) {
 			return SearchResult {
 				score: CHECKMATE_SCORE + parameters.ply_from_root as i16,
 				best_move: None,
@@ -316,7 +316,7 @@ pub fn search(
 
 		let new_position = position.apply_move(&m);
 		let mut next_ply_parameters = parameters.next_ply();
-		position_history.push(new_position.zobrist_hash);
+		position_history.push(new_position.hash());
 
 		let extensions = extensions(parameters.extensions, &new_position, &m);
 		next_ply_parameters.add_extension(extensions);

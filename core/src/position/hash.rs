@@ -1,7 +1,7 @@
 use rand::{rngs::SmallRng, RngCore, SeedableRng};
 
 use super::{
-	board::{Board, CASTLE_RIGHTS_SQUARES},
+	board::{Board, Square, ROOKS, ROOK_CASTLE_MOVE},
 	moves::{Move, MOVE_DIRECTION},
 	CastleSide, Color, Piece, Position, PositionMetadata,
 };
@@ -52,11 +52,7 @@ pub fn hash(boards: &[Board; 8], metadata: &PositionMetadata) -> u64 {
 		for color in [Color::Black, Color::White] {
 			let color_board = boards[color as usize];
 			for square in piece_locations & color_board {
-				let zobirst_value_index = (color as usize) * (64 * 6) + // Select the right color range
-					(piece as usize - 2) * 64 + // Select the right piece range
-					square.lsb_index(); // Select the square that the piece is on
-
-				hash ^= ZOBRIST_RANDOMS[zobirst_value_index];
+				hash ^= ZOBRIST_RANDOMS[hash_index(square, piece, color)];
 			}
 		}
 	}
@@ -93,79 +89,72 @@ pub fn hash(boards: &[Board; 8], metadata: &PositionMetadata) -> u64 {
 /// Calculating the original hash is expensive, so we want to avoid doing it as much as
 /// possible. This function will produce the hash value of a position after a given move,
 /// assuming that it's given the hash of the starting position.
-pub fn hash_after_move(old: u64, starting_position: &Position, to_apply: &Move) -> u64 {
-	let mut hash = old;
-	let piece = starting_position.piece_on(to_apply.start).unwrap();
-	let to_move = starting_position.metadata.to_move();
+pub fn hash_after_move(old_position: &Position, new_position: &Position, to_apply: &Move) -> u64 {
+	let mut hash = old_position.hash();
+	let piece = old_position.piece_on(to_apply.start).unwrap();
+	let to_move = old_position.to_move();
 
 	// Update the hash to reflect the moved piece.
-	let origin_square_index =
-		(to_move as usize) * (6 * 64) + (piece as usize - 2) * 64 + to_apply.start.lsb_index();
-	hash ^= ZOBRIST_RANDOMS[origin_square_index];
-
-	let destination_square_index =
-		(to_move as usize) * (6 * 64) + (piece as usize - 2) * 64 + to_apply.target.lsb_index();
-	hash ^= ZOBRIST_RANDOMS[destination_square_index];
+	hash ^= ZOBRIST_RANDOMS[hash_index(to_apply.start, piece, to_move)];
+	hash ^= ZOBRIST_RANDOMS[hash_index(to_apply.target, piece, to_move)];
 
 	// Update the hash to remove a captured piece
 	if to_apply.flags.is_en_passant() {
 		let capture_square = to_apply.target >> (8 * MOVE_DIRECTION[to_move as usize]);
-		let captured_piece_square_index = (1 - to_move as usize) * (6 * 64)
-			+ (Piece::Pawn as usize - 2) * 64
-			+ capture_square.lsb_index();
-		hash ^= ZOBRIST_RANDOMS[captured_piece_square_index];
+		hash ^= ZOBRIST_RANDOMS[hash_index(capture_square, Piece::Pawn, !to_move)];
 	} else if to_apply.flags.is_capture() {
-		let captured_piece = starting_position
-			.piece_on(to_apply.target)
-			.unwrap_or(Piece::Pawn);
-		let captured_piece_square_index = (1 - to_move as usize) * (6 * 64)
-			+ (captured_piece as usize - 2) * 64
-			+ to_apply.target.lsb_index();
-		hash ^= ZOBRIST_RANDOMS[captured_piece_square_index];
+		let captured_piece = old_position.piece_on(to_apply.target).unwrap();
+		hash ^= ZOBRIST_RANDOMS[hash_index(to_apply.target, captured_piece, !to_move)];
+	} else if let Some(side) = to_apply.flags.castling_side() {
+		// Castled, gotta update the rook locations also
+		let rook_start = ROOKS[side as usize][to_move as usize];
+		hash ^= ZOBRIST_RANDOMS[hash_index(rook_start, Piece::Rook, to_move)];
+
+		let rook_end = Square::from(ROOK_CASTLE_MOVE[side as usize][to_move as usize] ^ rook_start);
+		hash ^= ZOBRIST_RANDOMS[hash_index(rook_end, Piece::Rook, to_move)];
 	}
 
 	// Always toggle to move.
 	hash ^= ZOBRIST_RANDOMS[TO_MOVE_ZOBRIST_INDEX];
 
 	// Update castling rights
-	if piece == Piece::King {
-		if starting_position.can_castle(to_move, CastleSide::King) {
-			hash ^= ZOBRIST_RANDOMS[CASTLING_ZOBRIST_INDEX + to_move as usize];
-		}
-
-		if starting_position.can_castle(to_move, CastleSide::Queen) {
-			hash ^= ZOBRIST_RANDOMS[CASTLING_ZOBRIST_INDEX + to_move as usize + 1];
-		}
+	if old_position.can_castle(to_move, CastleSide::King)
+		^ new_position.can_castle(to_move, CastleSide::King)
+	{
+		hash ^= ZOBRIST_RANDOMS[CASTLING_ZOBRIST_INDEX + (2 * to_move as usize)];
 	}
 
-	if piece == Piece::Rook && (CASTLE_RIGHTS_SQUARES & to_apply.start).has_pieces() {
-		let side = CastleSide::from(to_apply.start);
-		if starting_position.can_castle(to_move, side) {
-			hash ^=
-				ZOBRIST_RANDOMS[CASTLING_ZOBRIST_INDEX + (2 * to_move as usize) + side as usize];
-		}
-	}
-
-	if to_apply.flags.is_capture() && (CASTLE_RIGHTS_SQUARES & to_apply.target).has_pieces() {
-		let side = CastleSide::from(to_apply.target);
-		if starting_position.can_castle(!to_move, side) {
-			hash ^=
-				ZOBRIST_RANDOMS[CASTLING_ZOBRIST_INDEX + (2 * !to_move as usize) + side as usize];
-		}
+	if old_position.can_castle(to_move, CastleSide::Queen)
+		^ new_position.can_castle(to_move, CastleSide::Queen)
+	{
+		hash ^= ZOBRIST_RANDOMS[CASTLING_ZOBRIST_INDEX + (2 * to_move as usize) + 1];
 	}
 
 	// Update the hash from en passant
-	if let Some(square) = starting_position.metadata.en_passant_square() {
+	if let Some(square) = old_position.en_passant_square() {
 		let en_passant_file = square.file() as usize;
 		hash ^= ZOBRIST_RANDOMS[EN_PASSANT_ZOBRIST_INDEX + en_passant_file];
 	}
 
-	if to_apply.flags.is_double_pawn_push() {
-		let en_passant_file = to_apply.target.file() as usize;
+	if let Some(square) = new_position.en_passant_square() {
+		let en_passant_file = square.file() as usize;
 		hash ^= ZOBRIST_RANDOMS[EN_PASSANT_ZOBRIST_INDEX + en_passant_file];
 	}
-
 	hash
+}
+
+fn hash_index(square: Square, piece: Piece, color: Color) -> usize {
+	// 1 value per piece per square. White comes first, so offset black by
+	// (6 pieces) * (64 squares) on the board.
+	(color as usize) * (6 * 64)
+		// Each piece has on value per square, so we need to offset by 
+		// (64 squares) * index_of_piece. Subtracting 2 because piece
+		// ordering starts at 2 to make indexing bitboards of the position
+		// by color or piece the same.
+		+ (piece as usize - 2) * 64
+		// And finally, plus the index of the square, starting at 0 A1
+		// up to 63 for H8. 
+		+ square.lsb_index()
 }
 
 #[cfg(test)]
@@ -175,13 +164,12 @@ mod test {
 
 	#[test]
 	pub fn test_hash_update() {
-		let mut position = Position::default();
-		let mut running_hash = hash_position(&position);
+		let position = Position::default();
 
 		// En passant created
 		let m = Move::from_uci_str("e2e4", &position);
-		running_hash = hash_after_move(running_hash, &position, &m);
-		position = position.apply_move(&m);
+		let running_hash = hash_after_move(&position, &position.apply_move(&m), &m);
+		let position = position.apply_move(&m);
 		let expected_hash = hash_position(
 			&Position::from_fen("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1")
 				.unwrap(),
@@ -190,8 +178,8 @@ mod test {
 
 		// En passant cleared
 		let m = Move::from_uci_str("g8f6", &position);
-		running_hash = hash_after_move(running_hash, &position, &m);
-		position = position.apply_move(&m);
+		let running_hash = hash_after_move(&position, &position.apply_move(&m), &m);
+		let position = position.apply_move(&m);
 		let expected_hash = hash_position(
 			&Position::from_fen("rnbqkb1r/pppppppp/5n2/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1")
 				.unwrap(),
@@ -200,8 +188,8 @@ mod test {
 
 		// Castling rights are gone for white
 		let m = Move::from_uci_str("e1e2", &position);
-		running_hash = hash_after_move(running_hash, &position, &m);
-		position = position.apply_move(&m);
+		let running_hash = hash_after_move(&position, &position.apply_move(&m), &m);
+		let position = position.apply_move(&m);
 		let expected_hash = hash_position(
 			&Position::from_fen("rnbqkb1r/pppppppp/5n2/8/4P3/8/PPPPKPPP/RNBQ1BNR b kq - 0 1")
 				.unwrap(),
@@ -210,7 +198,7 @@ mod test {
 
 		// Captured a piece
 		let m = Move::from_uci_str("f6e4", &position);
-		running_hash = hash_after_move(running_hash, &position, &m);
+		let running_hash = hash_after_move(&position, &position.apply_move(&m), &m);
 		let expected_hash = hash_position(
 			&Position::from_fen("rnbqkb1r/pppppppp/8/8/4n3/8/PPPPKPPP/RNBQ1BNR w kq - 0 1")
 				.unwrap(),

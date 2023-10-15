@@ -65,7 +65,7 @@ impl<'a> MoveIterator<'a> {
 			phase: MovePhase::Hash(hash_move),
 			position,
 			killers,
-			defense: attacks::get_attacked_squares(position, !position.metadata.to_move()),
+			defense: attacks::get_attacked_squares(position, !position.to_move()),
 		}
 	}
 
