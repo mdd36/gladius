@@ -1,7 +1,7 @@
 use rand::{rngs::SmallRng, RngCore, SeedableRng};
 
 use super::{
-	board::{Board, Square, ROOKS, ROOK_CASTLE_MOVE},
+	board::{rook_castle_move, rook_start, Board, Square},
 	moves::{Move, MOVE_DIRECTION},
 	CastleSide, Color, Piece, Position, PositionMetadata,
 };
@@ -107,10 +107,10 @@ pub fn hash_after_move(old_position: &Position, new_position: &Position, to_appl
 		hash ^= ZOBRIST_RANDOMS[hash_index(to_apply.target, captured_piece, !to_move)];
 	} else if let Some(side) = to_apply.flags.castling_side() {
 		// Castled, gotta update the rook locations also
-		let rook_start = ROOKS[side as usize][to_move as usize];
+		let rook_start = rook_start(side, to_move);
 		hash ^= ZOBRIST_RANDOMS[hash_index(rook_start, Piece::Rook, to_move)];
 
-		let rook_end = Square::from(ROOK_CASTLE_MOVE[side as usize][to_move as usize] ^ rook_start);
+		let rook_end = Square::from(rook_castle_move(side, to_move) ^ rook_start);
 		hash ^= ZOBRIST_RANDOMS[hash_index(rook_end, Piece::Rook, to_move)];
 	}
 

@@ -4,23 +4,46 @@ use std::ops::{
 
 use crate::position::{attacks, Color, Piece};
 
+use super::CastleSide;
+
 pub const CASTLE_RIGHTS_SQUARES: Board = Board(0x8100000000000081);
-/// Indexed as ROOKS[[`super::CastleSide`]][[`Color`]]
-pub const ROOKS: [[Square; 2]; 2] = [
+
+const ROOKS: [[Square; 2]; 2] = [
 	[Square(0x0000000000000001), Square(0x0100000000000000)],
 	[Square(0x0000000000000080), Square(0x8000000000000000)],
 ];
-pub const KING_START: [Square; 2] = [Square(0x0000000000000010), Square(0x1000000000000000)];
 
-pub const KING_CASTLE_SQUARE: [Square; 2] =
-	[Square(0x0000000000000040), Square(0x4000000000000000)];
-pub const QUEEN_CASTLE_SQUARE: [Square; 2] =
-	[Square(0x0000000000000004), Square(0x0400000000000000)];
-/// Indexed as ROOKS[[`super::CastleSide`]][[`Color`]]
-pub const ROOK_CASTLE_MOVE: [[Board; 2]; 2] = [
+const KING_START: [Square; 2] = [Square(0x0000000000000010), Square(0x1000000000000000)];
+
+const CASTLING_TARGET_SQUARE: [[Square; 2]; 2] = [
+	[Square(0x0000000000000004), Square(0x0400000000000000)],
+	[Square(0x0000000000000040), Square(0x4000000000000000)],
+];
+
+const ROOK_CASTLE_MOVE: [[Board; 2]; 2] = [
 	[Board(0x0000000000000009), Board(0x0900000000000000)],
 	[Board(0x00000000000000a0), Board(0xa000000000000000)],
 ];
+
+#[inline]
+pub const fn rook_start(side: CastleSide, color: Color) -> Square {
+	ROOKS[side as usize][color as usize]
+}
+
+#[inline]
+pub const fn king_start(color: Color) -> Square {
+	KING_START[color as usize]
+}
+
+#[inline]
+pub const fn castle_target_square(side: CastleSide, color: Color) -> Square {
+	CASTLING_TARGET_SQUARE[side as usize][color as usize]
+}
+
+#[inline]
+pub const fn rook_castle_move(side: CastleSide, color: Color) -> Board {
+	ROOK_CASTLE_MOVE[side as usize][color as usize]
+}
 
 pub const A_FILE: Board = Board(0x0101010101010101);
 pub const B_FILE: Board = Board(A_FILE.0 << 1);

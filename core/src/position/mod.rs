@@ -7,12 +7,12 @@ pub mod moves;
 
 use std::ops::BitOrAssign;
 
-use board::{Board, Square, CASTLE_RIGHTS_SQUARES, ROOKS};
+use board::{rook_start, Board, Square, CASTLE_RIGHTS_SQUARES};
 use moves::MOVE_DIRECTION;
 
 use self::{
 	attacks::attackers_of_square,
-	board::ROOK_CASTLE_MOVE,
+	board::rook_castle_move,
 	hash::{hash, hash_after_move},
 };
 
@@ -20,25 +20,6 @@ use self::{
 pub enum CastleSide {
 	Queen,
 	King,
-}
-
-impl From<Square> for CastleSide {
-	fn from(value: Square) -> Self {
-		let king = CastleSide::King as usize;
-		let queen = CastleSide::Queen as usize;
-		let white = Color::White as usize;
-		let black = Color::Black as usize;
-
-		if value == ROOKS[king][white] || value == ROOKS[king][black] {
-			return CastleSide::King;
-		}
-
-		if value == ROOKS[queen][white] || value == ROOKS[queen][black] {
-			return CastleSide::Queen;
-		}
-
-		panic!("Not a valid castling square: {value:?}")
-	}
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -581,7 +562,7 @@ impl Position {
 	}
 
 	pub fn apply_move(&self, next_move: &moves::Move) -> Position {
-		let color_to_move = self.metadata.to_move() as usize;
+		let color_to_move = self.to_move() as usize;
 		let moved_piece = self.piece_on(next_move.start).unwrap();
 		let flags = next_move.flags;
 
@@ -592,7 +573,7 @@ impl Position {
 			new_position.boards[captured_piece as usize] ^= next_move.target;
 		} else if let Some(side) = flags.castling_side() {
 			// Move the Rook also
-			let rook_move = ROOK_CASTLE_MOVE[side as usize][color_to_move];
+			let rook_move = rook_castle_move(side, self.to_move());
 			new_position.boards[Piece::Rook as usize] ^= rook_move;
 			new_position.boards[color_to_move] ^= rook_move;
 		} else if flags.is_en_passant() {
@@ -631,7 +612,7 @@ impl Position {
 		if ((next_move.start | next_move.target) & CASTLE_RIGHTS_SQUARES).has_pieces() {
 			for side in [CastleSide::Queen, CastleSide::King] {
 				for color in [Color::White, Color::Black] {
-					let rook_square = ROOKS[side as usize][color as usize];
+					let rook_square = rook_start(side, color);
 					if (next_move.target | next_move.start).is_occupied(rook_square) {
 						new_position
 							.metadata

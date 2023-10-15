@@ -1,8 +1,8 @@
 use super::{
 	attacks,
 	board::{
-		between, ray, Board, Square, A_FILE, EIGHTH_RANK, FIRST_RANK, H_FILE, KING_CASTLE_SQUARE,
-		KING_START, QUEEN_CASTLE_SQUARE, ROOKS,
+		between, castle_target_square, king_start, ray, rook_start, Board, Square, A_FILE,
+		EIGHTH_RANK, FIRST_RANK, H_FILE,
 	},
 	CastleSide, Piece, Position,
 };
@@ -264,13 +264,11 @@ impl Move {
 			}
 		}
 
-		let starting_king_square = KING_START[color_to_move as usize];
+		let starting_king_square = king_start(color_to_move);
 		if piece == Piece::King && start == starting_king_square {
-			let king_side_castle_square = KING_CASTLE_SQUARE[color_to_move as usize];
-			let queen_side_castle_square = QUEEN_CASTLE_SQUARE[color_to_move as usize];
-			if target == king_side_castle_square {
+			if target == castle_target_square(CastleSide::King, color_to_move) {
 				flags = MoveFlags::king_castling();
-			} else if target == queen_side_castle_square {
+			} else if target == castle_target_square(CastleSide::Queen, color_to_move) {
 				flags = MoveFlags::queen_castling();
 			}
 		}
@@ -331,14 +329,14 @@ pub fn generate_moves<const QUIESCENT: bool>(position: &Position) -> Vec<Move> {
 
 	// Castling
 	if position.can_castle(to_move, CastleSide::King) {
-		let start = KING_START[to_move as usize];
-		let target = KING_CASTLE_SQUARE[to_move as usize];
+		let start = king_start(to_move);
+		let target = castle_target_square(CastleSide::King, to_move);
 		moves.push(Move::new(start, target, MoveFlags::king_castling()));
 	}
 
 	if position.can_castle(to_move, CastleSide::Queen) {
-		let start = KING_START[to_move as usize];
-		let target = QUEEN_CASTLE_SQUARE[to_move as usize];
+		let start = king_start(to_move);
+		let target = castle_target_square(CastleSide::Queen, to_move);
 		moves.push(Move::new(start, target, MoveFlags::queen_castling()));
 	}
 
@@ -523,7 +521,7 @@ fn is_legal(position: &Position, checkers: Board, proposed_move: &Move) -> bool 
 
 	if let Some(side) = proposed_move.flags.castling_side() {
 		let occupancy = position.get_occupancy_board();
-		let rook_square = ROOKS[side as usize][to_move_color as usize];
+		let rook_square = rook_start(side, to_move_color);
 		let attacked_squares = attacks::get_attacked_squares(position, !to_move_color);
 		let king_path = between(proposed_move.start, proposed_move.target) | king_square;
 		let between_rook_and_king = between(king_square, rook_square) ^ rook_square;
