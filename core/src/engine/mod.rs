@@ -161,10 +161,6 @@ impl GladiusEngine {
 			Duration::from_millis(millis_for_move).saturating_sub(self.opts.move_overhead)
 		})
 	}
-
-	pub fn show_fen(&self) -> String {
-		self.current_position.to_fen()
-	}
 }
 
 impl Engine for GladiusEngine {
@@ -203,7 +199,11 @@ impl Engine for GladiusEngine {
 	}
 
 	fn display(&self) -> String {
-		self.current_position.as_display_string()
+		format!(
+			"\n{}\n\nfen {}",
+			self.current_position.as_display_string(),
+			self.current_position.to_fen(),
+		)
 	}
 
 	fn perft(&self, depth: u8) {

@@ -669,14 +669,15 @@ impl Position {
 	/// use gladius_core::position::Position;
 	///
 	/// let start_position_string = indoc::indoc! {"
-	/// 	♜ ♞ ♝ ♛ ♚ ♝ ♞ ♜
-	///		♟ ♟ ♟ ♟ ♟ ♟ ♟ ♟
-	///		▢ ▧ ▢ ▧ ▢ ▧ ▢ ▧
-	///		▧ ▢ ▧ ▢ ▧ ▢ ▧ ▢
-	///		▢ ▧ ▢ ▧ ▢ ▧ ▢ ▧
-	///		▧ ▢ ▧ ▢ ▧ ▢ ▧ ▢
-	///		♙ ♙ ♙ ♙ ♙ ♙ ♙ ♙
-	///		♖ ♘ ♗ ♕ ♔ ♗ ♘ ♖
+	/// 	8 ♜ ♞ ♝ ♛ ♚ ♝ ♞ ♜
+	///		7 ♟ ♟ ♟ ♟ ♟ ♟ ♟ ♟
+	///		6 ▢ ▧ ▢ ▧ ▢ ▧ ▢ ▧
+	///		5 ▧ ▢ ▧ ▢ ▧ ▢ ▧ ▢
+	///		4 ▢ ▧ ▢ ▧ ▢ ▧ ▢ ▧
+	///		3 ▧ ▢ ▧ ▢ ▧ ▢ ▧ ▢
+	///		2 ♙ ♙ ♙ ♙ ♙ ♙ ♙ ♙
+	///		1 ♖ ♘ ♗ ♕ ♔ ♗ ♘ ♖
+	///		  A B C D E F G H
 	/// "};
 	///
 	/// assert_eq!(
@@ -690,57 +691,37 @@ impl Position {
 		// of the required UTF-8 bytes buffer things like linebreaks
 		let mut board_string = String::with_capacity(4 * 64 * 2);
 
-		let combined_board =
-			self.get_board_for_color(Color::White) | self.get_board_for_color(Color::Black);
-
 		for rank in (0u8..8).rev() {
 			// Rev so black's side is printed first
+			board_string.push((rank + '1' as u8) as char);
+			board_string.push(' ');
 			for file in 0u8..8 {
 				let square = Square::from_rank_and_file(rank, file);
-				if (combined_board & square).is_empty() {
-					if (rank + file) % 2 == 0 {
-						board_string.push_str("▧ ");
-					} else {
-						board_string.push_str("▢ ");
-					}
-					continue;
-				}
 
-				// Unicode offset for the black pieces is 6 since there's six unique
-				// chess pieces and white comes first
-				let color_offset = if (self.get_board_for_color(Color::White) & square).has_pieces()
-				{
-					0
-				} else {
-					6
+				let square_contents = match (self.color_on(square), self.piece_on(square)) {
+					(Some(Color::White), Some(Piece::Pawn)) => '♙',
+					(Some(Color::White), Some(Piece::Rook)) => '♖',
+					(Some(Color::White), Some(Piece::Knight)) => '♘',
+					(Some(Color::White), Some(Piece::Bishop)) => '♗',
+					(Some(Color::White), Some(Piece::Queen)) => '♕',
+					(Some(Color::White), Some(Piece::King)) => '♔',
+					(Some(Color::Black), Some(Piece::Pawn)) => '♟',
+					(Some(Color::Black), Some(Piece::Rook)) => '♜',
+					(Some(Color::Black), Some(Piece::Knight)) => '♞',
+					(Some(Color::Black), Some(Piece::Bishop)) => '♝',
+					(Some(Color::Black), Some(Piece::Queen)) => '♛',
+					(Some(Color::Black), Some(Piece::King)) => '♚',
+					_ if (rank + file) % 2 == 0 => '▧',
+					_ => '▢',
 				};
 
-				let piece_offset = if (self.get_board_for_piece(Piece::King) & square).has_pieces()
-				{
-					0
-				} else if (self.get_board_for_piece(Piece::Queen) & square).has_pieces() {
-					1
-				} else if (self.get_board_for_piece(Piece::Rook) & square).has_pieces() {
-					2
-				} else if (self.get_board_for_piece(Piece::Bishop) & square).has_pieces() {
-					3
-				} else if (self.get_board_for_piece(Piece::Knight) & square).has_pieces() {
-					4
-				} else {
-					5
-				};
-
-				let white_king_unicode_code_point = 0x2654u32;
-				let chess_piece_unicode =
-					char::from_u32(white_king_unicode_code_point + piece_offset + color_offset)
-						.unwrap();
-				board_string.push(chess_piece_unicode);
+				board_string.push(square_contents);
 				board_string.push(' ');
 			}
 			board_string.remove(board_string.len() - 1); // Trim final space
 			board_string.push('\n');
 		}
-		board_string.remove(board_string.len() - 1); // Trim trailing newline
+		board_string.push_str("  A B C D E F G H");
 		board_string
 	}
 }
@@ -767,14 +748,15 @@ mod test {
 		)
 		.unwrap();
 		let expected_board_string = indoc::indoc! {"
-			♜ ▧ ▢ ▧ ♚ ▧ ♞ ♜
-			♟ ♟ ♟ ▢ ▧ ♟ ♟ ♟
-			▢ ▧ ♞ ♝ ▢ ▧ ▢ ▧
-			▧ ▢ ▧ ♟ ♟ ♝ ▧ ▢
-			▢ ▧ ▢ ♙ ▢ ▧ ▢ ♛
-			♘ ▢ ♙ ▢ ▧ ♙ ▧ ▢
-			♙ ♙ ▢ ▧ ♙ ▧ ♙ ♙
-			▧ ♖ ♗ ♕ ♔ ♗ ♘ ♖
+			8 ♜ ▧ ▢ ▧ ♚ ▧ ♞ ♜
+			7 ♟ ♟ ♟ ▢ ▧ ♟ ♟ ♟
+			6 ▢ ▧ ♞ ♝ ▢ ▧ ▢ ▧
+			5 ▧ ▢ ▧ ♟ ♟ ♝ ▧ ▢
+			4 ▢ ▧ ▢ ♙ ▢ ▧ ▢ ♛
+			3 ♘ ▢ ♙ ▢ ▧ ♙ ▧ ▢
+			2 ♙ ♙ ▢ ▧ ♙ ▧ ♙ ♙
+			1 ▧ ♖ ♗ ♕ ♔ ♗ ♘ ♖
+			  A B C D E F G H
 		"};
 		assert_eq!(
 			position.as_display_string().trim(),
