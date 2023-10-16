@@ -19,6 +19,18 @@ const PAWN_SQUARE_WEIGHTS: [i16; 64] = [
 ];
 
 #[rustfmt::skip]
+const PAWN_SQUARE_WEIGHTS_ENDGAME: [i16; 64] = [
+	0,  0,  0,  0,  0,  0,  0,  0,
+	50, 50, 50, 50, 50, 50, 50, 50,
+	45, 45, 45, 45, 45, 45, 45, 45,
+	40, 40, 40, 40, 40, 40, 40, 40,
+	30, 30, 30, 30, 30, 30, 30, 30,
+	20, 20, 20, 20, 20, 20, 20, 20,
+	 0,  0,  0,  0,  0,  0,  0,  0,
+	 0,  0,  0,  0,  0,  0,  0,  0,
+];
+
+#[rustfmt::skip]
 const ROOK_SQUARE_WEIGHTS: [i16; 64] = [
 	0,  0,  0,  0,  0,  0,  0,  0,
   5, 10, 10, 10, 10, 10, 10,  5,
@@ -136,10 +148,16 @@ pub fn positioning_score(position: &Position, color: Color) -> i16 {
 	let our_pieces = position.get_board_for_color(color);
 
 	let pawn_board = position.get_board_for_piece(Piece::Pawn) & our_pieces;
-	score += pawn_board
+	let (pawn_early_game_score, pawn_endgame_score) = pawn_board
 		.into_iter()
-		.map(|sq| PAWN_SQUARE_WEIGHTS[normalize_index(color, sq)])
-		.sum::<i16>();
+		.fold((0, 0), |(early_game, endgame), sq| {
+			let normalized_square = normalize_index(color, sq);
+			(
+				early_game + PAWN_SQUARE_WEIGHTS[normalized_square],
+				endgame + PAWN_SQUARE_WEIGHTS_ENDGAME[normalized_square]
+			)
+		});
+		score += combine_phase_scores(position, pawn_early_game_score, pawn_endgame_score);
 
 	let rook_board = position.get_board_for_piece(Piece::Rook) & our_pieces;
 	score += rook_board
