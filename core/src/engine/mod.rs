@@ -1,5 +1,5 @@
 use crate::{
-	eval::{evaluate_position_verbose, Evaluation, MIN_SCORE},
+	eval::{evaluate_position_verbose, repetition::PositionHistory, Evaluation, MIN_SCORE},
 	position::{
 		moves::{divide, Move, MoveDivision},
 		Color, Position,
@@ -163,7 +163,7 @@ pub enum EngineMessage {
 pub struct GladiusEngine {
 	opts: EngineOpts,
 	current_position: Position,
-	position_history: Vec<u64>,
+	position_history: PositionHistory,
 	output_channel: Sender<EngineMessage>,
 	transposition_table: TranspositionTable,
 	stop: Arc<AtomicBool>,
@@ -173,7 +173,7 @@ impl GladiusEngine {
 	pub fn new(opts: EngineOpts, output_channel: Sender<EngineMessage>) -> Self {
 		GladiusEngine {
 			current_position: Position::default(),
-			position_history: Vec::new(),
+			position_history: PositionHistory::default(),
 			transposition_table: TranspositionTable::new(opts.table_size),
 			stop: Arc::new(AtomicBool::default()),
 			opts,
@@ -219,7 +219,7 @@ impl Engine for GladiusEngine {
 		let original_position_history = self.position_history.clone();
 
 		self.position_history.clear();
-		self.position_history.push(starting_position.hash());
+		self.position_history.add_position(&starting_position);
 		self.current_position = starting_position;
 
 		for m in &move_history {
@@ -232,7 +232,7 @@ impl Engine for GladiusEngine {
 					return;
 				}
 			};
-			self.position_history.push(self.current_position.hash());
+			self.position_history.add_position(&self.current_position);
 		}
 	}
 

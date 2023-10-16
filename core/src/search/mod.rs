@@ -8,8 +8,8 @@ use std::sync::{
 
 use crate::{
 	eval::{
-		evaluate_position, material::value_of_piece, repetition::is_threefold_repetition,
-		CHECKMATE_SCORE, MAX_SCORE, MIN_SCORE, STALEMATE_SCORE,
+		evaluate_position, material::value_of_piece, repetition::PositionHistory, CHECKMATE_SCORE,
+		MAX_SCORE, MIN_SCORE, STALEMATE_SCORE,
 	},
 	position::{
 		moves::{generate_moves, Move},
@@ -243,20 +243,14 @@ fn quiescence(
 /// positional score and the number of positions explored.
 pub fn search(
 	position: &Position,
-	position_history: &mut Vec<u64>,
+	position_history: &mut PositionHistory,
 	transposition_table: &mut TranspositionTable,
 	killers_table: &mut KillerTable,
 	mut parameters: SearchParameters,
 	stop: Arc<AtomicBool>,
 ) -> SearchResult {
 	// Draws from board history
-	if position.half_move_clock() >= 100
-		|| is_threefold_repetition(
-			position.half_move_clock(),
-			parameters.ply_from_root,
-			position_history,
-			position.hash(),
-		) {
+	if position.half_move_clock() >= 100 || position_history.repetitions(position) == 3 {
 		return SearchResult {
 			score: STALEMATE_SCORE,
 			best_move: None,
@@ -323,7 +317,7 @@ pub fn search(
 
 		let new_position = position.apply_move(&m);
 		let mut next_ply_parameters = parameters.next_ply();
-		position_history.push(new_position.hash());
+		position_history.add_position(&new_position);
 
 		let extensions = extensions(parameters.extensions, &new_position, &m);
 		next_ply_parameters.add_extension(extensions);
@@ -367,7 +361,7 @@ pub fn search(
 
 	SearchResult {
 		score: best_score.inner(),
-		best_move: best_move,
+		best_move,
 		nodes_explored,
 	}
 }

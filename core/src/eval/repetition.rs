@@ -1,24 +1,84 @@
-/// Detect a threefold repetition, which will result in a draw.
-///
-/// This code is adapted from a description on the
-/// [Chess Programming Wiki](https://www.chessprogramming.org/Repetitions#List_of_Keys)
-pub fn is_threefold_repetition(
-	ply_from_irreversible: u8,
-	ply_from_root: u8,
-	move_history: &Vec<u64>,
-	new_position: u64,
-) -> bool {
-	if ply_from_irreversible > 5 {
-		let start = move_history.len() - ply_from_irreversible as usize;
-		let repetition_count = move_history[start..]
-			.iter()
-			.filter(|position| new_position.eq(&position))
-			.count();
-		// Either we've found a definite 3 fold repetition, or we're guessing that
-		// we'd find one a little further along and are stopping early to speed
-		// up the search.
-		repetition_count == 3 || (repetition_count == 2 && ply_from_root > 4)
-	} else {
-		false
+use crate::position::Position;
+
+/// A wrapper to handle managing position history and checking for
+/// repetitions.
+#[derive(Clone, Default)]
+pub struct PositionHistory(Vec<u64>);
+
+impl PositionHistory {
+	/// Add a new position to the history.
+	pub fn add_position(&mut self, position: &Position) {
+		self.0.push(position.hash());
+	}
+
+	/// Remove the last visited position from the history
+	pub fn pop(&mut self) {
+		self.0.pop();
+	}
+
+	/// Remove all entries from the history
+	pub fn clear(&mut self) {
+		self.0.clear()
+	}
+
+	/// Count the number of repetitions of a given position.
+	pub fn repetitions(&self, position: &Position) -> u8 {
+		// Only need to scan from the last irreversible move,
+		// which is a pawn push or capture. The first repetition
+		// can only come on the 3rd ply from the irreversible move
+		let ply_from_irreversible = position.half_move_clock() as usize;
+		if ply_from_irreversible > 3 {
+			let start = self.0.len() - ply_from_irreversible;
+			let current_position_hash = position.hash();
+			self.0[start..]
+				.iter()
+				.filter(|&&previous_position_hash| previous_position_hash == current_position_hash)
+				.count() as u8
+		} else {
+			0
+		}
+	}
+}
+
+#[cfg(test)]
+pub mod test {
+
+	use crate::position::moves::Move;
+	use pretty_assertions::assert_eq;
+
+	use super::*;
+
+	#[test]
+	fn position_history_test() {
+		let mut position_history = PositionHistory::default();
+
+		let mut position = Position::from_fen(
+			"r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
+		)
+		.unwrap();
+		assert_eq!(0, position_history.repetitions(&position));
+		position_history.add_position(&position);
+
+		for cycle in 0u8..2 {
+			position = position.apply_move(&Move::from_uci_str("f3f5", &position));
+			assert_eq!(cycle, position_history.repetitions(&position));
+			position_history.add_position(&position);
+
+			position = position.apply_move(&Move::from_uci_str("e7c5", &position));
+			assert_eq!(cycle, position_history.repetitions(&position));
+			position_history.add_position(&position);
+
+			position = position.apply_move(&Move::from_uci_str("f5f3", &position));
+			assert_eq!(cycle, position_history.repetitions(&position));
+			position_history.add_position(&position);
+
+			position = position.apply_move(&Move::from_uci_str("c5e7", &position));
+			assert_eq!(cycle + 1, position_history.repetitions(&position));
+			position_history.add_position(&position);
+		}
+
+		position = position.apply_move(&Move::from_uci_str("g2g4", &position));
+		assert_eq!(0, position_history.repetitions(&position));
+		position_history.add_position(&position);
 	}
 }
