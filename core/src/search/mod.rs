@@ -263,10 +263,14 @@ pub fn search(
 	}
 	let saved_position = transposition_table.get(position.hash());
 	if let Some(entry) = saved_position {
-		match entry.score {
-			Score::Exact(_) => return SearchResult::from(entry),
-			Score::UpperBound(score) => parameters.alpha = std::cmp::max(parameters.alpha, score),
-			Score::LowerBound(score) => parameters.beta = std::cmp::min(parameters.beta, score),
+		if entry.depth >= parameters.ply {
+			match entry.score {
+				Score::Exact(_) => return SearchResult::from(entry),
+				Score::UpperBound(score) => {
+					parameters.alpha = std::cmp::max(parameters.alpha, score)
+				}
+				Score::LowerBound(score) => parameters.beta = std::cmp::min(parameters.beta, score),
+			}
 		}
 	};
 

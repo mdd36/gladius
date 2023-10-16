@@ -299,9 +299,6 @@ impl Engine for GladiusEngine {
 			None => self.time_limit(&parameters),
 		};
 
-		// Create a task to stop the search after the time limit has elapsed.
-		// We'll only use 80% of the time as a safety margin to make sure we
-		// have a response before the timeout.
 		if !infinite {
 			let timeout_stop_flag = self.stop.clone();
 			let timeout_tx = self.output_channel.clone();

@@ -102,6 +102,7 @@ fn main() {
 		};
 
 		let line = match stdin_rx.try_recv() {
+			Ok(line) if line.is_empty() => continue,
 			Ok(line) => line,
 			Err(TryRecvError::Empty) => {
 				std::thread::sleep(std::time::Duration::from_millis(200));
