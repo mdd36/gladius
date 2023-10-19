@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-	eval::material::value_of_piece,
+	eval::material::{static_exchange, value_of_piece},
 	position::{attacks, board::Board, moves::Move, Piece, Position},
 };
 
@@ -87,10 +87,8 @@ impl<'a> MoveIterator<'a> {
 
 		if mov.flags.is_capture() {
 			let attacker = self.position.piece_on(mov.start).unwrap();
-			let attacker_value = value_of_piece(attacker);
 			let victim = self.position.piece_on(mov.target).unwrap_or(Piece::Pawn); // En passant edge case
-			let victim_value = value_of_piece(victim);
-			let material_delta = victim_value - attacker_value;
+			let material_delta = static_exchange(attacker, victim);
 
 			score += material_delta;
 
@@ -110,6 +108,19 @@ impl<'a> MoveIterator<'a> {
 			match &self.killers {
 				Some(killers) if killers.contains(mov) => score += value_of_piece(Piece::Queen),
 				_ => {}
+			}
+			let attacks = attacks::get_attacks(
+				self.position.get_occupancy_board() ^ mov.start ^ mov.target,
+				mov.target,
+				self.position.piece_on(mov.start).unwrap(),
+				self.position.to_move(),
+			);
+			let is_check = (attacks
+				& self.position.get_board_for_color(!self.position.to_move())
+				& self.position.get_board_for_piece(Piece::King))
+			.has_pieces();
+			if is_check {
+				score += value_of_piece(Piece::Queen);
 			}
 		}
 

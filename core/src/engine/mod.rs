@@ -4,7 +4,7 @@ use crate::{
 		moves::{divide, Move, MoveDivision},
 		Color, Position,
 	},
-	search::{self, move_ordering::KillerTable, search, transposition::TranspositionTable},
+	search::{self, move_ordering::KillerTable, search, transposition::TranspositionTable, ROOT},
 };
 use std::{
 	panic::catch_unwind,
@@ -328,7 +328,7 @@ impl Engine for GladiusEngine {
 				}
 
 				let tic = std::time::Instant::now();
-				let search_result = search(
+				let search_result = search::<ROOT>(
 					&starting_position,
 					&mut move_history,
 					&mut transposition_table,

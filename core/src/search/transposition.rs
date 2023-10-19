@@ -111,7 +111,7 @@ impl TranspositionTable {
 
 		if let Some(existing_entry) = table[index] {
 			if entry.depth > existing_entry.depth
-				|| (entry.age > existing_entry.age && entry.age - existing_entry.age > 10)
+				|| (entry.age.saturating_sub(existing_entry.age) > 10)
 			{
 				table[index] = Some(entry);
 			}

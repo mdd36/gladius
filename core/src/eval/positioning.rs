@@ -21,11 +21,11 @@ const PAWN_SQUARE_WEIGHTS: [i16; 64] = [
 #[rustfmt::skip]
 const PAWN_SQUARE_WEIGHTS_ENDGAME: [i16; 64] = [
 	0,  0,  0,  0,  0,  0,  0,  0,
+	80, 80, 80, 80, 80, 80, 80, 80,
 	50, 50, 50, 50, 50, 50, 50, 50,
-	45, 45, 45, 45, 45, 45, 45, 45,
-	40, 40, 40, 40, 40, 40, 40, 40,
 	30, 30, 30, 30, 30, 30, 30, 30,
 	20, 20, 20, 20, 20, 20, 20, 20,
+	10, 10, 10, 10, 10, 10, 10, 10,
 	 0,  0,  0,  0,  0,  0,  0,  0,
 	 0,  0,  0,  0,  0,  0,  0,  0,
 ];
@@ -104,11 +104,7 @@ const KING_SQUARE_WEIGHTS_ENDGAME: [i16; 64] = [
 
 #[rustfmt::skip]
 const PASSED_PAWN_BONUS: [i16; 8] = [
-	0, 30, 20, 12, 5, 5, 0, 0
-];
-#[rustfmt::skip]
-const PASSED_PAWN_BONUS_END_GAME: [i16; 8] = [
-	0, 60, 40, 25, 15, 10, 10, 0
+	0, 120, 80, 50, 30, 15, 15, 0
 ];
 
 /// An isolated D pawn is less penalizing since it's
@@ -118,16 +114,12 @@ const PASSED_PAWN_BONUS_END_GAME: [i16; 8] = [
 const ISOLATED_PAWN_PENALTY: [i16; 8] = [
 	-15, -15, -15, -5, -15, -15, -15, -15
 ];
-#[rustfmt::skip]
-const ISOLATED_PAWN_PENALTY_END_GAME: [i16; 8] = [
-	-30, -30, -30, -30, -30, -30, -30, -30	
-];
 
 /// A bonus or penalty to apply based on the weighted
 /// number of attackers of the king's zone
 #[rustfmt::skip]
 const KING_ATTACK_WEIGHTS: [i16; 8] = [
-	0, 0, -10, -20, -50, -100, -500, -1000
+	0, 0, -10, -20, -50, -100, -200, -500
 ];
 
 lazy_static::lazy_static!(
@@ -148,16 +140,17 @@ pub fn positioning_score(position: &Position, color: Color) -> i16 {
 	let our_pieces = position.get_board_for_color(color);
 
 	let pawn_board = position.get_board_for_piece(Piece::Pawn) & our_pieces;
-	let (pawn_early_game_score, pawn_endgame_score) = pawn_board
-		.into_iter()
-		.fold((0, 0), |(early_game, endgame), sq| {
-			let normalized_square = normalize_index(color, sq);
-			(
-				early_game + PAWN_SQUARE_WEIGHTS[normalized_square],
-				endgame + PAWN_SQUARE_WEIGHTS_ENDGAME[normalized_square]
-			)
-		});
-		score += combine_phase_scores(position, pawn_early_game_score, pawn_endgame_score);
+	let (pawn_early_game_score, pawn_endgame_score) =
+		pawn_board
+			.into_iter()
+			.fold((0, 0), |(early_game, endgame), sq| {
+				let normalized_square = normalize_index(color, sq);
+				(
+					early_game + PAWN_SQUARE_WEIGHTS[normalized_square],
+					endgame + PAWN_SQUARE_WEIGHTS_ENDGAME[normalized_square],
+				)
+			});
+	score += combine_phase_scores(position, pawn_early_game_score, pawn_endgame_score);
 
 	let rook_board = position.get_board_for_piece(Piece::Rook) & our_pieces;
 	score += rook_board
@@ -205,8 +198,7 @@ pub fn pawn_structure(position: &Position, color: Color) -> i16 {
 	let our_pawns = our_pieces & all_pawns;
 	let their_pawns = their_pieces & all_pawns;
 
-	let mut end_game_score = 0;
-	let mut early_game_score = 0;
+	let mut score = 0;
 
 	for pawn in our_pawns {
 		if is_passed(pawn, color, our_pawns, their_pawns) {
@@ -214,17 +206,15 @@ pub fn pawn_structure(position: &Position, color: Color) -> i16 {
 				Color::White => 7 - pawn.rank(),
 				Color::Black => pawn.rank(),
 			} as usize;
-			early_game_score += PASSED_PAWN_BONUS[squares_to_promotion];
-			end_game_score += PASSED_PAWN_BONUS_END_GAME[squares_to_promotion];
+			score += PASSED_PAWN_BONUS[squares_to_promotion];
 		}
 
 		if is_isolated(pawn, our_pawns) {
-			early_game_score += ISOLATED_PAWN_PENALTY[pawn.file() as usize];
-			end_game_score += ISOLATED_PAWN_PENALTY_END_GAME[pawn.file() as usize];
+			score += ISOLATED_PAWN_PENALTY[pawn.file() as usize];
 		}
 	}
 
-	combine_phase_scores(position, early_game_score, end_game_score)
+	score
 }
 
 fn is_passed(pawn: Square, color: Color, our_pawns: Board, their_pawns: Board) -> bool {

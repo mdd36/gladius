@@ -1,14 +1,14 @@
 use crate::position::{Color, Piece, Position};
 
 const MATERIAL_VALUES: [i16; 8] = [
-	0,     // First two are dummies to allow indexing
-	0,     // by the Piece enum discriminate
-	100,   // Pawn
-	500,   // Rook
-	320,   // Knight
-	330,   // Bishop
-	900,   // Queen
-	20000, // King
+	0,   // First two are dummies to allow indexing
+	0,   // by the Piece enum discriminate
+	100, // Pawn
+	500, // Rook
+	320, // Knight
+	330, // Bishop
+	900, // Queen
+	0,   // King.
 ];
 
 pub const HALF_PAWN: i16 = MATERIAL_VALUES[Piece::Pawn as usize] / 2;
@@ -40,6 +40,6 @@ pub const fn value_of_piece(piece: Piece) -> i16 {
 	MATERIAL_VALUES[piece as usize]
 }
 
-pub fn static_exchange(attacker: Piece, captured: Piece) -> i16 {
-	value_of_piece(captured) - value_of_piece(attacker)
+pub fn static_exchange(attacker: Piece, victim: Piece) -> i16 {
+	value_of_piece(victim) - value_of_piece(attacker)
 }

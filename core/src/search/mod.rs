@@ -58,9 +58,17 @@ impl Score {
 	}
 }
 
+/// I wish there was a better way to handle the constant generics for
+/// search, but since enums aren't supported and constant generics
+/// can't be used as arguments to const functions, this is as good
+/// as we can get.
+pub const ROOT: usize = 0;
+const _PV: usize = 1;
+const NON_PV: usize = 2;
+
 pub struct SearchParameters {
+	pub depth: u8,
 	pub ply: u8,
-	pub ply_from_root: u8,
 	pub extensions: u8,
 	pub alpha: i16,
 	pub beta: i16,
@@ -69,8 +77,8 @@ pub struct SearchParameters {
 impl SearchParameters {
 	pub fn new(max_depth: u8) -> Self {
 		Self {
-			ply: max_depth,
-			ply_from_root: 0,
+			depth: max_depth,
+			ply: 0,
 			extensions: 0,
 			alpha: MIN_SCORE,
 			beta: MAX_SCORE,
@@ -79,8 +87,8 @@ impl SearchParameters {
 
 	pub fn new_with_alpha(max_depth: u8, alpha: i16) -> Self {
 		Self {
-			ply: max_depth,
-			ply_from_root: 0,
+			depth: max_depth,
+			ply: 0,
 			extensions: 0,
 			alpha,
 			beta: MAX_SCORE,
@@ -89,8 +97,8 @@ impl SearchParameters {
 
 	pub fn next_ply(&self) -> Self {
 		Self {
-			ply: self.ply - 1,
-			ply_from_root: self.ply_from_root + 1,
+			depth: self.depth - 1,
+			ply: self.ply + 1,
 			extensions: self.extensions,
 			alpha: -self.beta,
 			beta: -self.alpha,
@@ -99,13 +107,13 @@ impl SearchParameters {
 
 	pub fn add_extension(&mut self, extensions: u8) {
 		self.extensions += extensions;
-		self.ply += extensions;
+		self.depth += extensions;
 	}
 
 	pub fn quiescent(&self) -> Self {
 		Self {
-			ply: std::u8::MAX,
-			ply_from_root: self.ply_from_root + 1,
+			depth: std::u8::MAX,
+			ply: self.ply + 1,
 			extensions: self.extensions,
 			alpha: -self.beta,
 			beta: -self.alpha,
@@ -219,14 +227,10 @@ fn quiescence(
 
 		if score > alpha {
 			alpha = score;
-		}
 
-		if score >= beta {
-			return SearchResult {
-				score,
-				best_move: None,
-				nodes_explored,
-			};
+			if score >= beta {
+				break;
+			}
 		}
 	}
 
@@ -241,7 +245,7 @@ fn quiescence(
 /// If given enough time (order of tens of milliseconds), this will find
 /// the best move to play in the current position along with the current
 /// positional score and the number of positions explored.
-pub fn search(
+pub fn search<const NODE_TYPE: usize>(
 	position: &Position,
 	position_history: &mut PositionHistory,
 	transposition_table: &mut TranspositionTable,
@@ -249,37 +253,45 @@ pub fn search(
 	mut parameters: SearchParameters,
 	stop: Arc<AtomicBool>,
 ) -> SearchResult {
-	// Draws from board history
-	if position.half_move_clock() >= 100 || position_history.repetitions(position) == 3 {
-		return SearchResult {
-			score: STALEMATE_SCORE,
-			best_move: None,
-			nodes_explored: 1,
-		};
-	}
-
-	if parameters.ply == 0 {
-		return quiescence(position, parameters.alpha, parameters.beta, stop.clone());
-	}
 	let saved_position = transposition_table.get(position.hash());
-	if let Some(entry) = saved_position {
-		if entry.depth >= parameters.ply {
-			match entry.score {
-				Score::Exact(_) => return SearchResult::from(entry),
-				Score::UpperBound(score) => {
-					parameters.alpha = std::cmp::max(parameters.alpha, score)
-				}
-				Score::LowerBound(score) => parameters.beta = std::cmp::min(parameters.beta, score),
-			}
+	if NODE_TYPE != ROOT {
+		if parameters.depth == 0 {
+			return quiescence(position, parameters.alpha, parameters.beta, stop);
 		}
-	};
 
-	if parameters.alpha >= parameters.beta {
-		return SearchResult {
-			score: parameters.alpha,
-			best_move: None,
-			nodes_explored: 1,
-		};
+		let repetitions = position_history.repetitions(position);
+		// Draws from board history
+		if position.half_move_clock() >= 100 || repetitions == 3 {
+			return SearchResult {
+				score: STALEMATE_SCORE,
+				best_move: None,
+				nodes_explored: 1,
+			};
+		}
+
+		if NODE_TYPE == NON_PV && repetitions < 2 {
+			if let Some(entry) = saved_position {
+				if entry.depth >= parameters.depth {
+					match entry.score {
+						Score::Exact(_) => return SearchResult::from(entry),
+						Score::UpperBound(score) => {
+							parameters.alpha = std::cmp::max(parameters.alpha, score)
+						}
+						Score::LowerBound(score) => {
+							parameters.beta = std::cmp::min(parameters.beta, score)
+						}
+					}
+				}
+			};
+		}
+
+		if parameters.alpha >= parameters.beta {
+			return SearchResult {
+				score: parameters.alpha,
+				best_move: None,
+				nodes_explored: 1,
+			};
+		}
 	}
 
 	let possible_moves = generate_moves::<false>(position);
@@ -287,7 +299,7 @@ pub fn search(
 	if possible_moves.is_empty() {
 		if position.is_color_in_check(position.to_move()) {
 			return SearchResult {
-				score: CHECKMATE_SCORE + parameters.ply_from_root as i16,
+				score: CHECKMATE_SCORE - parameters.ply as i16,
 				best_move: None,
 				nodes_explored: 1,
 			};
@@ -303,20 +315,13 @@ pub fn search(
 	let mut best_move = None;
 	let mut best_score = Score::UpperBound(parameters.alpha);
 	let mut nodes_explored = 1;
-	let ordered_move_iterator = MoveIterator::new(
-		possible_moves,
-		position,
-		saved_position.map(|entry| entry.best_move),
-		killers_table.get(parameters.ply),
-	);
+	let hash_move = saved_position.map(|entry| entry.best_move);
+	let killers = killers_table.get(parameters.depth);
+	let ordered_move_iterator = MoveIterator::new(possible_moves, position, hash_move, killers);
 
 	for m in ordered_move_iterator {
 		if stop.load(Ordering::Relaxed) {
-			return SearchResult {
-				score: best_score.inner(),
-				best_move: best_move,
-				nodes_explored,
-			};
+			break;
 		}
 
 		let new_position = position.apply_move(&m);
@@ -326,7 +331,7 @@ pub fn search(
 		let extensions = extensions(parameters.extensions, &new_position, &m);
 		next_ply_parameters.add_extension(extensions);
 
-		let search_result = search(
+		let search_result = search::<NON_PV>(
 			&new_position,
 			position_history,
 			transposition_table,
@@ -349,17 +354,17 @@ pub fn search(
 			if score >= parameters.beta {
 				// This move is too good for us, so our opponent won't let us play it
 				if !m.flags.is_capture() {
-					killers_table.insert(parameters.ply_from_root, m);
+					killers_table.insert(parameters.ply, m);
 				}
 
-				best_score = Score::LowerBound(parameters.beta);
+				best_score = Score::LowerBound(score);
 				break;
 			}
 		}
 	}
 
 	if let Some(m) = best_move {
-		let table_entry = TranspositionEntry::from(position, m, best_score, parameters.ply);
+		let table_entry = TranspositionEntry::from(position, m, best_score, parameters.depth);
 		transposition_table.insert(table_entry)
 	}
 
