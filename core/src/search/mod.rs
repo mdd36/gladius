@@ -255,10 +255,6 @@ pub fn search<const NODE_TYPE: usize>(
 ) -> SearchResult {
 	let saved_position = transposition_table.get(position.hash());
 	if NODE_TYPE != ROOT {
-		if parameters.depth == 0 {
-			return quiescence(position, parameters.alpha, parameters.beta, stop);
-		}
-
 		let repetitions = position_history.repetitions(position);
 		// Draws from board history
 		if position.half_move_clock() >= 100 || repetitions == 3 {
@@ -291,6 +287,10 @@ pub fn search<const NODE_TYPE: usize>(
 				best_move: None,
 				nodes_explored: 1,
 			};
+		}
+
+		if parameters.depth == 0 {
+			return quiescence(position, parameters.alpha, parameters.beta, stop);
 		}
 	}
 

@@ -26,17 +26,12 @@ impl PositionHistory {
 		// Only need to scan from the last irreversible move,
 		// which is a pawn push or capture. The first repetition
 		// can only come on the 3rd ply from the irreversible move
-		let ply_from_irreversible = position.half_move_clock() as usize;
-		if ply_from_irreversible > 3 {
-			let start = self.0.len() - ply_from_irreversible;
-			let current_position_hash = position.hash();
-			self.0[start..]
-				.iter()
-				.filter(|&&previous_position_hash| previous_position_hash == current_position_hash)
-				.count() as u8
-		} else {
-			0
-		}
+		self.0
+			.iter()
+			.rev()
+			.take(position.half_move_clock() as usize + 1)
+			.filter(|&&hash| hash == position.hash())
+			.count() as u8
 	}
 }
 
