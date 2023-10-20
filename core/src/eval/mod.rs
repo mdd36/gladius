@@ -3,7 +3,7 @@ pub mod positioning;
 pub mod repetition;
 
 use self::{
-	material::material_score,
+	material::{insufficient_material, material_score},
 	positioning::{king_safety, pawn_structure, positioning_score},
 };
 use crate::position::{Piece, Position};
@@ -25,6 +25,10 @@ pub struct Evaluation {
 }
 
 pub fn evaluate_position(position: &Position) -> i16 {
+	if insufficient_material(position) {
+		return STALEMATE_SCORE;
+	}
+
 	let us = position.to_move();
 	let them = !us;
 
