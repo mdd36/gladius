@@ -4,7 +4,7 @@ use std::ops::{
 
 use crate::position::{attacks, Color, Piece};
 
-use super::CastleSide;
+use super::{moves::move_direction, CastleSide};
 
 pub const CASTLE_RIGHTS_SQUARES: Board = Board(0x8100000000000081);
 
@@ -45,23 +45,64 @@ pub const fn rook_castle_move(side: CastleSide, color: Color) -> Board {
 	ROOK_CASTLE_MOVE[side as usize][color as usize]
 }
 
-pub const A_FILE: Board = Board(0x0101010101010101);
-pub const B_FILE: Board = Board(A_FILE.0 << 1);
-pub const C_FILE: Board = Board(A_FILE.0 << 2);
-pub const D_FILE: Board = Board(A_FILE.0 << 3);
-pub const E_FILE: Board = Board(A_FILE.0 << 4);
-pub const F_FILE: Board = Board(A_FILE.0 << 5);
-pub const G_FILE: Board = Board(A_FILE.0 << 6);
-pub const H_FILE: Board = Board(A_FILE.0 << 7);
+pub const A_FILE_MASK: Board = Board(0x0101010101010101);
+pub const B_FILE_MASK: Board = Board(A_FILE_MASK.0 << 1);
+pub const C_FILE_MASK: Board = Board(A_FILE_MASK.0 << 2);
+pub const D_FILE_MASK: Board = Board(A_FILE_MASK.0 << 3);
+pub const E_FILE_MASK: Board = Board(A_FILE_MASK.0 << 4);
+pub const F_FILE_MASK: Board = Board(A_FILE_MASK.0 << 5);
+pub const G_FILE_MASK: Board = Board(A_FILE_MASK.0 << 6);
+pub const H_FILE_MASK: Board = Board(A_FILE_MASK.0 << 7);
 
-pub const FIRST_RANK: Board = Board(0x0000000000000ff);
-pub const SECOND_RANK: Board = Board(FIRST_RANK.0 << (1 * 8));
-pub const THIRD_RANK: Board = Board(FIRST_RANK.0 << (2 * 8));
-pub const FOURTH_RANK: Board = Board(FIRST_RANK.0 << (3 * 8));
-pub const FIFTH_RANK: Board = Board(FIRST_RANK.0 << (4 * 8));
-pub const SIXTH_RANK: Board = Board(FIRST_RANK.0 << (5 * 8));
-pub const SEVENTH_RANK: Board = Board(FIRST_RANK.0 << (6 * 8));
-pub const EIGHTH_RANK: Board = Board(FIRST_RANK.0 << (7 * 8));
+const FILE_MASKS: [Board; 8] = [
+	A_FILE_MASK,
+	B_FILE_MASK,
+	C_FILE_MASK,
+	D_FILE_MASK,
+	E_FILE_MASK,
+	F_FILE_MASK,
+	G_FILE_MASK,
+	H_FILE_MASK,
+];
+
+#[inline]
+pub const fn file_mask(index: u8) -> Board {
+	FILE_MASKS[index as usize]
+}
+
+pub const A_FILE_INDEX: u8 = 0;
+pub const B_FILE_INDEX: u8 = 1;
+pub const C_FILE_INDEX: u8 = 2;
+pub const D_FILE_INDEX: u8 = 3;
+pub const E_FILE_INDEX: u8 = 4;
+pub const F_FILE_INDEX: u8 = 5;
+pub const G_FILE_INDEX: u8 = 6;
+pub const H_FILE_INDEX: u8 = 7;
+
+pub const FIRST_RANK_MASK: Board = Board(0x0000000000000ff);
+pub const SECOND_RANK_MASK: Board = Board(FIRST_RANK_MASK.0 << (1 * 8));
+pub const THIRD_RANK_MASK: Board = Board(FIRST_RANK_MASK.0 << (2 * 8));
+pub const FOURTH_RANK_MASK: Board = Board(FIRST_RANK_MASK.0 << (3 * 8));
+pub const FIFTH_RANK_MASK: Board = Board(FIRST_RANK_MASK.0 << (4 * 8));
+pub const SIXTH_RANK_MASK: Board = Board(FIRST_RANK_MASK.0 << (5 * 8));
+pub const SEVENTH_RANK_MASK: Board = Board(FIRST_RANK_MASK.0 << (6 * 8));
+pub const EIGHTH_RANK_MASK: Board = Board(FIRST_RANK_MASK.0 << (7 * 8));
+
+const RANK_MASKS: [Board; 8] = [
+	FIRST_RANK_MASK,
+	SECOND_RANK_MASK,
+	THIRD_RANK_MASK,
+	FOURTH_RANK_MASK,
+	FIFTH_RANK_MASK,
+	SIXTH_RANK_MASK,
+	SEVENTH_RANK_MASK,
+	EIGHTH_RANK_MASK,
+];
+
+#[inline]
+pub const fn rank_mask(index: u8) -> Board {
+	RANK_MASKS[index as usize]
+}
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct Square(u64);
@@ -159,9 +200,72 @@ impl Square {
 		Self::from_rank_and_file(rank, file)
 	}
 
+	/// Create a [`Square`] based on the index of a single 1.
+	/// This essentially lets us create a square from its index
+	/// on the board.
+	///
+	/// ### Example
+	/// ```
+	/// use gladius_core::position::board::Square;
+	///
+	/// assert_eq!(
+	/// 	Square::from_algebraic_notation("a1"),
+	/// 	Square::from_lsb_index(0)
+	/// );
+	///
+	/// assert_eq!(
+	/// 	Square::from_algebraic_notation("h8"),
+	/// 	Square::from_lsb_index(63)
+	/// );
+	/// ```
 	pub fn from_lsb_index(index: u32) -> Self {
-		let index = index as u8;
-		Self::from_rank_and_file(index / 8, index % 8)
+		Self(1 << index)
+	}
+
+	/// Get the nth next rank for this square. A next rank is
+	/// a rank in front of this square when looking at the
+	/// board from the perspective of a given color. If the rank
+	/// would go off the board, the next rank is instead clamped
+	/// to the size of the board.
+	///
+	/// ### Example
+	/// ```
+	/// use gladius_core::position::{Color, board::Square};
+	///
+	/// let square = Square::from_algebraic_notation("a2");
+	/// assert_eq!(2, square.nth_next_rank(1, Color::White));
+	/// assert_eq!(0, square.nth_next_rank(1, Color::Black));
+	/// ```
+	#[inline]
+	pub fn nth_next_rank(&self, n: i8, color: Color) -> u8 {
+		let next_file = self.rank() as i8 + (n * move_direction(color));
+		next_file.max(0).min(7) as u8
+	}
+
+	/// Get the nth previous rank for this square. A previous rank is
+	/// a rank behind this square when looking at the
+	/// board from the perspective of a given color. If the rank
+	/// would go off the board, the previous rank is instead clamped
+	/// to the size of the board.
+	///
+	/// ### Example
+	/// ```
+	/// use gladius_core::position::{Color, board::Square};
+	///
+	/// let square = Square::from_algebraic_notation("a2");
+	/// assert_eq!(0, square.nth_previous_rank(1, Color::White));
+	/// assert_eq!(2, square.nth_previous_rank(1, Color::Black));
+	/// ```
+	#[inline]
+	pub fn nth_previous_rank(&self, n: i8, color: Color) -> u8 {
+		let next_file = self.rank() as i8 - (n * move_direction(color));
+		next_file.max(0).min(7) as u8
+	}
+
+	/// Calculate the distance between two squares using the
+	/// Manhattan distance heuristic.
+	pub fn distance(&self, other: Square) -> u8 {
+		self.file().abs_diff(other.file()) + self.rank().abs_diff(other.rank())
 	}
 
 	/// Convert a 0-indexed rank and file into a [`Square`]
@@ -405,6 +509,14 @@ impl BitXorAssign<Square> for Board {
 	}
 }
 
+impl Shl<usize> for Board {
+	type Output = Self;
+
+	fn shl(self, rhs: usize) -> Self::Output {
+		Self(self.0 << rhs)
+	}
+}
+
 impl ShlAssign<usize> for Board {
 	fn shl_assign(&mut self, rhs: usize) {
 		*self = Self(self.0 << rhs)
@@ -477,6 +589,14 @@ impl Board {
 
 	pub fn has_pieces(&self) -> bool {
 		self.0 != 0
+	}
+
+	pub fn shift_ranks(&self, num_ranks: i8) -> Self {
+		if num_ranks < 0 {
+			Self(self.0 >> num_ranks.abs())
+		} else {
+			Self(self.0 << num_ranks)
+		}
 	}
 }
 

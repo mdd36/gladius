@@ -26,6 +26,7 @@ const CLI_BANNER: &str = r#"
 O|===|* >________________>
       \|
 
+version 0.1.0
 © 2023 Matthew Dickson
 "#;
 

@@ -1,6 +1,9 @@
 use crate::position::{
 	attacks::{self, KING_ATTACKS},
-	board::{Board, Square, A_FILE, B_FILE, C_FILE, D_FILE, E_FILE, F_FILE, G_FILE, H_FILE},
+	board::{
+		Board, Square, A_FILE_MASK, B_FILE_MASK, C_FILE_MASK, D_FILE_MASK, E_FILE_MASK,
+		F_FILE_MASK, G_FILE_MASK, H_FILE_MASK,
+	},
 	Color, Piece, Position,
 };
 
@@ -124,14 +127,14 @@ const KING_ATTACK_WEIGHTS: [i16; 8] = [
 
 lazy_static::lazy_static!(
 	static ref PAWN_FLANKS: [Board; 8] = [
-		B_FILE,
-		A_FILE | C_FILE,
-		B_FILE | D_FILE,
-		C_FILE | E_FILE,
-		D_FILE | F_FILE,
-		E_FILE | G_FILE,
-		F_FILE | H_FILE,
-		G_FILE,
+		B_FILE_MASK,
+		A_FILE_MASK | C_FILE_MASK,
+		B_FILE_MASK | D_FILE_MASK,
+		C_FILE_MASK | E_FILE_MASK,
+		D_FILE_MASK | F_FILE_MASK,
+		E_FILE_MASK | G_FILE_MASK,
+		F_FILE_MASK | H_FILE_MASK,
+		G_FILE_MASK,
 	];
 );
 
@@ -222,7 +225,7 @@ fn is_passed(pawn: Square, color: Color, our_pawns: Board, their_pawns: Board) -
 		Color::White => std::u64::MAX << (pawn.rank() + 1),
 		Color::Black => std::u64::MAX >> (pawn.rank() - 1),
 	};
-	let pawn_file = forward_mask & (A_FILE.as_u64() << pawn.file());
+	let pawn_file = forward_mask & (A_FILE_MASK.as_u64() << pawn.file());
 	let side_files_masks = forward_mask & PAWN_FLANKS[pawn.file() as usize].as_u64();
 	(our_pawns & pawn_file).is_empty() && (their_pawns & (pawn_file | side_files_masks)).is_empty()
 }

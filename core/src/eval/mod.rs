@@ -1,3 +1,4 @@
+pub mod king;
 pub mod material;
 pub mod positioning;
 pub mod repetition;
@@ -72,8 +73,8 @@ pub fn evaluate_position_verbose(position: &Position) -> Evaluation {
 	let their_pawn_structure = pawn_structure(position, them);
 	let pawn_structure_difference = our_pawn_structure - their_pawn_structure;
 
-	let our_king_safety = king_safety(position, us);
-	let their_king_safety = king_safety(position, them);
+	let our_king_safety = king::king_safety(position, us);
+	let their_king_safety = king::king_safety(position, them);
 	let king_safety_difference = our_king_safety - their_king_safety;
 
 	let total = material_difference

@@ -1,14 +1,19 @@
 use super::{
 	attacks,
 	board::{
-		between, castle_target_square, king_start, ray, rook_start, Board, Square, A_FILE,
-		EIGHTH_RANK, FIRST_RANK, H_FILE,
+		between, castle_target_square, king_start, ray, rook_start, Board, Square, A_FILE_MASK,
+		EIGHTH_RANK_MASK, FIRST_RANK_MASK, H_FILE_MASK,
 	},
 	CastleSide, Piece, Position,
 };
 
 pub const MOVE_DIRECTION: [i8; 2] = [1, -1];
 pub const STARTING_PAWNS: [u64; 2] = [0x000000000000ff00, 0x00ff000000000000];
+
+#[inline]
+pub fn move_direction(color: super::Color) -> i8 {
+	MOVE_DIRECTION[color as usize]
+}
 
 /// Various settings that could be true for a move. For example, if a capture
 /// occurred, if there's an en passant square after the move, or if a promotion
@@ -400,7 +405,7 @@ fn pawn_single_moves(position: &Position, pins: Board, moves: &mut Vec<Move>) {
 	let move_direction = MOVE_DIRECTION[to_move_color as usize];
 	let en_passant_square = position.en_passant_square();
 	let king_square = Square::from(position.get_board_for_piece(Piece::King) & to_move_color_board);
-	let promotion_ranks = FIRST_RANK | EIGHTH_RANK;
+	let promotion_ranks = FIRST_RANK_MASK | EIGHTH_RANK_MASK;
 
 	for start in piece_of_color {
 		// Single forward push
@@ -419,7 +424,7 @@ fn pawn_single_moves(position: &Position, pins: Board, moves: &mut Vec<Move>) {
 	}
 
 	// Diagonal attacks and en passant
-	for start in piece_of_color & !A_FILE {
+	for start in piece_of_color & !A_FILE_MASK {
 		let target = start << ((8 - move_direction) * move_direction);
 		let pin_limitation = pin_mask(pins, king_square, start);
 		if opponent_board.is_occupied(target) && pin_limitation.is_occupied(target) {
@@ -452,7 +457,7 @@ fn pawn_single_moves(position: &Position, pins: Board, moves: &mut Vec<Move>) {
 		}
 	}
 
-	for start in piece_of_color & !H_FILE {
+	for start in piece_of_color & !H_FILE_MASK {
 		let target = start << ((8 + move_direction) * move_direction);
 		let pin_limitation = pin_mask(pins, king_square, start);
 		if opponent_board.is_occupied(target) && pin_limitation.is_occupied(target) {
