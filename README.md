@@ -10,9 +10,12 @@
 
 [![Build and Test](https://github.com/mdd36/gladius/actions/workflows/build-and-test.yaml/badge.svg)](https://github.com/mdd36/gladius/actions/workflows/build-and-test.yaml)
 
+[![lichess-bullet](https://lichess-shield.vercel.app/api?username=gladius_bot&format=bullet)](https://lichess.org/@/gladius_bot/perf/bullet)
+[![lichess-blitz](https://lichess-shield.vercel.app/api?username=gladius_bot&format=blitz)](https://lichess.org/@/gladius_bot/perf/blitz)
+[![lichess-rapid](https://lichess-shield.vercel.app/api?username=gladius_bot&format=rapid)](https://lichess.org/@/gladius_bot/perf/rapid)
 </div>
 
-A chess engine built in Rust. By default, the core engine comes bundled with a [Universal Chess Interface](https://en.wikipedia.org/wiki/Universal_Chess_Interface) (UCI) front end to support CLI and bot play.
+A chess engine built in Rust. By default, the core engine comes bundled with a [Universal Chess Interface](https://en.wikipedia.org/wiki/Universal_Chess_Interface) (UCI) front end to support CLI and bot play. Connected to the [gladius_bot](https://lichess.org/@/gladius_bot) Lichess account, where it's currently accepting human challenges.
 
 ## Structure
 This repo holds a Cargo workspace with two crates, `gladius_core` and `gladius`. 
